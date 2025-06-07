@@ -5,7 +5,7 @@ require_once 'api/client.php';
 
 // Nếu đã đăng nhập thì redirect về dashboard
 if (isLoggedIn()) {
-    redirect('dashboard.php');
+    redirect('/pages/dashboard.php');
 }
 
 $error = '';

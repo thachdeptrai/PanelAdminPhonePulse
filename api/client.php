@@ -15,7 +15,7 @@ class MongoAPIClient
     private function makeRequest($endpoint, $method = 'GET', $data = null)
     {
         $url = $this->baseUrl . $endpoint;
-        echo('Request URL: ' . $url);
+        // echo('Request URL: ' . $url);
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -72,8 +72,8 @@ class MongoAPIClient
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        echo "HTTP Status Code: $httpCode\n";
-        echo "Response body: $response\n";
+        // echo "HTTP Status Code: $httpCode\n";
+        // echo "Response body: $response\n";
 
         if (curl_error($ch)) {
             curl_close($ch);
@@ -134,7 +134,7 @@ class MongoAPIClient
         ];
 
         // Log chuỗi JSON
-        echo("Sending login data: " . json_encode($data));
+        // echo("Sending login data: " . json_encode($data));
 
         return $this->makeRequest('/users/login', 'POST', $data);
     }
