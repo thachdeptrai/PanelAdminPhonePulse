@@ -1,13 +1,10 @@
 <?php
-// Include configuration and functions
-require_once 'includes/config.php';
 require_once 'includes/functions.php';
 
-// Check if the user is logged in
-if (isLoggedIn()) {
-    // Redirect to dashboard if logged in
-    redirect('pages/dashboard.php');
+if (!isset($_SESSION['admin_logged_in'])) {
+    header('Location: dang_nhap');
+    exit;
 } else {
-    // Redirect to login page if not logged in
-    redirect('login.php');
+    header('Location: trang_chu');
+    exit;
 }

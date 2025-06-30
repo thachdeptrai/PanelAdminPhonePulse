@@ -1,0 +1,32 @@
+RewriteEngine On
+
+# Map URL ảo → file thật
+
+
+RewriteRule ^dang_nhap$ login.php [L]
+
+RewriteRule ^dang_xuat$ pages/logout.php [L]
+
+RewriteRule ^trang_chu$ pages/dashboard.php [L]
+
+RewriteRule ^users$ pages/users.php [L]
+
+# Chuyển users/view/123 => users.php?action=view&id=123
+# RewriteRule ^users/view/([0-9]+)$ users.php?action=view&id=$1 [L,QSA]
+
+# # Chuyển users/edit/123 => users.php?action=edit&id=123
+# RewriteRule ^users/edit/([0-9]+)$ users.php?action=edit&id=$1 [L,QSA]
+
+# # Chuyển users/delete/123 => users.php?action=delete&id=123
+# RewriteRule ^users/delete/([0-9]+)$ users.php?action=delete&id=$1 [L,QSA]
+RewriteCond %{THE_REQUEST} \.php [NC]   
+RewriteRule .* - [R=404,L]
+ErrorDocument 404 /404.php
+
+# Nếu không match thì tự tìm file.php
+
+RewriteCond %{REQUEST_FILENAME} !-f
+
+RewriteCond %{REQUEST_FILENAME} !-d
+
+RewriteRule ^([a-zA-Z0-9_-]+)$ $1.php [L]

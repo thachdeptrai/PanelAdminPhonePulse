@@ -1,35 +1,49 @@
 <?php
-// includes/config.php
-session_start();
+$host = 'localhost';
+$db   = 'phonepulse';
+$user = 'root';
+$pass = ''; // nếu có mật khẩu thì điền vào đây
+// $charset = 'utf8mb4';
 
-// Cấu hình cơ bản
-define('BASE_URL', 'http://localhost/');
-define('SITE_NAME', 'Admin Panel');
+$dsn = "mysql:host=$host;dbname=$db";
+$options = [
+    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION, // báo lỗi
+    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,       // fetch dạng array
+    PDO::ATTR_EMULATE_PREPARES   => false,                  // dùng prepare thật
+];
 
-// Cấu hình MongoDB API
-define('MONGO_API_BASE_URL', 'http://localhost:5000/api'); // Thay đổi theo API của bạn
-// define('API_KEY', ''); // Nếu có API key
-
-// Cấu hình timezone
-date_default_timezone_set('Asia/Ho_Chi_Minh');
-
-// Bật error reporting cho development
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
-
-// Hàm kiểm tra đăng nhập
-function isLoggedIn() {
-    return isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true;
+try {
+    $pdo = new PDO($dsn, $user, $pass, $options);
+} catch (\PDOException $e) {
+    die('Kết nối database thất bại: ' . $e->getMessage());
 }
-
-// Hàm redirect
-function redirect($url) {
-    header("Location: " . $url);
-    exit();
-}
-
-// Hàm escape HTML
-function e($string) {
-    return htmlspecialchars($string, ENT_QUOTES, 'UTF-8');
-}
-?>
+// // Đặt tên site
+// define('SITE_NAME', 'PhonePulse Admin');
+// // Đặt URL của API
+// define('API_URL', 'http://localhost/phonepulse/api/');
+// // Đặt URL của trang admin
+// define('ADMIN_URL', 'http://localhost/phonepulse/admin/');
+// // Đặt URL của trang client 
+// define('CLIENT_URL', 'http://localhost/phonepulse/client/');
+// // Đặt URL của trang dashboard
+// define('DASHBOARD_URL', ADMIN_URL . 'pages/dashboard.php');
+// // Đặt URL của trang login
+// define('LOGIN_URL', ADMIN_URL . 'login.php');
+// // Đặt URL của trang logout
+// define('LOGOUT_URL', ADMIN_URL . 'logout.php');
+// // Đặt URL của trang users
+// define('USERS_URL', ADMIN_URL . 'pages/users.php');
+// // Đặt URL của trang settings
+// define('SETTINGS_URL', ADMIN_URL . 'pages/settings.php');
+// // Đặt URL của trang dashboard stats
+// define('DASHBOARD_STATS_URL', API_URL . 'dashboard/stats');
+// // Đặt URL của trang admin assets
+// define('ADMIN_ASSETS_URL', ADMIN_URL . 'assets/');
+// // Đặt URL của trang client assets
+// define('CLIENT_ASSETS_URL', CLIENT_URL . 'assets/');
+// // Đặt URL của trang admin assets CSS
+// define('ADMIN_CSS_URL', ADMIN_ASSETS_URL . 'css/');
+// // Đặt URL của trang admin assets JS
+// define('ADMIN_JS_URL', ADMIN_ASSETS_URL . 'js/');
+// // Đặt URL của trang client assets CSS
+// define('CLIENT_CSS_URL', CLIENT_ASSETS_URL . 'css/');
