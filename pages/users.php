@@ -160,34 +160,36 @@
         }
     }
 
-    // Xử lý tìm kiếm
-    $searchTerm      = isset($_GET['search']) ? trim($_GET['search']) : '';
-    $searchCondition = '';
-    $searchParams    = [];
+   // Tìm kiếm
+$searchTerm      = isset($_GET['search']) ? trim($_GET['search']) : '';
+$searchCondition = '';
+$searchParams    = [];
 
-    if (! empty($searchTerm)) {
-        $searchCondition = "WHERE name LIKE ? OR email LIKE ? OR phone LIKE ?";
-        $searchParams    = ["%$searchTerm%", "%$searchTerm%", "%$searchTerm%"];
-    }
+if (!empty($searchTerm)) {
+    $searchCondition = "WHERE name LIKE ? OR email LIKE ? OR phone LIKE ?";
+    $searchParams    = ["%$searchTerm%", "%$searchTerm%", "%$searchTerm%"];
+}
 
-    // Lấy danh sách users phân trang
-    $page   = isset($_GET['page']) ? (int) $_GET['page'] : 1;
-    $limit  = 10;
-    $offset = ($page - 1) * $limit;
+// Phân trang
+$page   = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+$limit  = 10;
+$offset = ($page - 1) * $limit;
 
-    $sql  = "SELECT SQL_CALC_FOUND_ROWS * FROM users $searchCondition ORDER BY created_date DESC LIMIT :offset, :limit";
-    $stmt = $pdo->prepare($sql);
+// SQL query (toàn ?)
+$sql = "SELECT SQL_CALC_FOUND_ROWS * FROM users $searchCondition ORDER BY created_date DESC LIMIT ?, ?";
+$stmt = $pdo->prepare($sql);
 
-    foreach ($searchParams as $key => $value) {
-        $stmt->bindValue($key + 1, $value);
-    }
-    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-    $stmt->execute();
-    $users = $stmt->fetchAll();
+// Bind search + offset/limit
+$searchParams[] = $offset;
+$searchParams[] = $limit;
 
-    $totalUsers = $pdo->query("SELECT FOUND_ROWS()")->fetchColumn();
-    $totalPages = ceil($totalUsers / $limit);
+$stmt->execute($searchParams);
+$users = $stmt->fetchAll();
+
+// Tổng số user
+$totalUsers = $pdo->query("SELECT FOUND_ROWS()")->fetchColumn();
+$totalPages = ceil($totalUsers / $limit);
+
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -197,201 +199,10 @@
   <title>Quản lý Users</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-  <style>
-    body {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      color: #fff;
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    }
-
-    .main-container {
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-      margin: 20px auto;
-      padding: 30px;
-    }
-
-    .card {
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 15px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    }
-
-    .card-header {
-      background: rgba(255, 255, 255, 0.1);
-      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 15px 15px 0 0 !important;
-    }
-
-    .table {
-      color: #fff;
-      background: transparent;
-    }
-
-    .table th {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: rgba(255, 255, 255, 0.2);
-      color: #fff;
-      font-weight: 600;
-    }
-
-    .table td {
-      border-color: rgba(255, 255, 255, 0.1);
-      vertical-align: middle;
-    }
-
-    .table tbody tr:hover {
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    .btn {
-      border-radius: 10px;
-      font-weight: 500;
-      transition: all 0.3s ease;
-    }
-
-    .btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-    }
-
-    .btn-primary {
-      background: linear-gradient(45deg, #667eea, #764ba2);
-      border: none;
-    }
-
-    .btn-outline-primary, .btn-outline-warning, .btn-outline-danger {
-      border-width: 2px;
-      color: #fff;
-    }
-
-    .btn-outline-primary {
-      border-color: #17a2b8;
-    }
-    .btn-outline-primary:hover {
-      background: #17a2b8;
-      border-color: #17a2b8;
-    }
-
-    .btn-outline-warning {
-      border-color: #ffc107;
-    }
-    .btn-outline-warning:hover {
-      background: #ffc107;
-      border-color: #ffc107;
-      color: #000;
-    }
-
-    .btn-outline-danger {
-      border-color: #dc3545;
-    }
-    .btn-outline-danger:hover {
-      background: #dc3545;
-      border-color: #dc3545;
-    }
-
-    .modal-content {
-      background: rgba(255, 255, 255, 0.1);
-      backdrop-filter: blur(15px);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 15px;
-      color: #fff;
-    }
-
-    .modal-header {
-      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .modal-footer {
-      border-top: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .form-control, .form-select {
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.3);
-      border-radius: 10px;
-      color: #fff;
-    }
-
-    .form-control:focus, .form-select:focus {
-      background: rgba(255, 255, 255, 0.15);
-      border-color: #667eea;
-      box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
-      color: #fff;
-    }
-
-    .form-control::placeholder {
-      color: rgba(255, 255, 255, 0.7);
-    }
-
-    .btn-back {
-      position: fixed;
-      top: 20px;
-      left: 20px;
-      background: linear-gradient(45deg, #28a745, #20c997);
-      color: #fff;
-      padding: 12px 20px;
-      border: none;
-      border-radius: 25px;
-      z-index: 1000;
-      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-      transition: all 0.3s ease;
-      text-decoration: none;
-    }
-
-    .btn-back:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
-      color: #fff;
-    }
-
-    .badge {
-      padding: 8px 12px;
-      border-radius: 20px;
-      font-size: 0.75rem;
-    }
-
-    .alert {
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      border-radius: 15px;
-      color: #fff;
-    }
-
-    .page-link {
-      background: rgba(255, 255, 255, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      color: #fff;
-      border-radius: 10px;
-      margin: 0 2px;
-    }
-
-    .page-link:hover {
-      background: rgba(255, 255, 255, 0.2);
-      color: #fff;
-    }
-
-    .page-item.active .page-link {
-      background: linear-gradient(45deg, #667eea, #764ba2);
-      border-color: #667eea;
-    }
-
-    .btn-close {
-      filter: invert(1);
-    }
-
-    h1, h5 {
-      text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
-    }
-  </style>
+  <link rel="stylesheet" href="../assets/css/users.css">
 </head>
 <body>
+  
   <a href="trang_chu" class="btn-back">
     <i class="fas fa-arrow-left me-2"></i>Trang chủ
   </a>
@@ -763,7 +574,7 @@
                     <?php endif; ?>
                   </p>
                   <p><strong>Ngày tạo:</strong>                                                   <?php echo date('d/m/Y H:i:s', strtotime($viewUser['created_date'])); ?></p>
-                  <p><strong>Ngày cập nhật:</strong>                                                          <?php echo $viewUser['updated_date'] ? date('d/m/Y H:i:s', strtotime($viewUser['updated_date'])) : 'Chưa cập nhật'; ?></p>
+                  <p><strong>Ngày cập nhật:</strong>                                                          <?php echo $viewUser['modified_date'] ? date('d/m/Y H:i:s', strtotime($viewUser['modified_date'])) : 'Chưa cập nhật'; ?></p>
                 </div>
               </div>
             </div>
@@ -863,158 +674,8 @@
 
   <!-- Scripts -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script>
-    // Delete confirmation
-    function confirmDelete(userId, userName) {
-      document.getElementById('deleteUserName').textContent = userName;
-      document.getElementById('confirmDeleteBtn').href = '?action=delete&id=' + userId;
-
-      const deleteModal = new bootstrap.Modal(document.getElementById('deleteModal'));
-      deleteModal.show();
-    }
-
-    // Auto hide alerts after 5 seconds
-    document.addEventListener('DOMContentLoaded', function() {
-      const alerts = document.querySelectorAll('.alert');
-      alerts.forEach(function(alert) {
-        setTimeout(function() {
-          const bsAlert = new bootstrap.Alert(alert);
-          bsAlert.close();
-        }, 5000);
-      });
-    });
-
-    // Form validation
-    document.getElementById('addUserForm').addEventListener('submit', function(e) {
-      const password = this.querySelector('input[name="password"]').value;
-      if (password.length < 6) {
-        e.preventDefault();
-        alert('Mật khẩu phải có ít nhất 6 ký tự!');
-        return false;
-      }
-    });
-
-    // Edit form validation
-    const editForm = document.getElementById('editUserForm');
-    if (editForm) {
-      editForm.addEventListener('submit', function(e) {
-        const password = this.querySelector('input[name="password"]').value;
-        if (password && password.length < 6) {
-          e.preventDefault();
-          alert('Mật khẩu phải có ít nhất 6 ký tự!');
-          return false;
-        }
-      });
-    }
-
-    // Search form enhancement
-    const searchInput = document.querySelector('input[name="search"]');
-    if (searchInput) {
-      searchInput.addEventListener('keyup', function(e) {
-        if (e.key === 'Enter') {
-          this.form.submit();
-        }
-      });
-    }
-
-    // Auto focus on modals
-    document.addEventListener('shown.bs.modal', function(e) {
-      const firstInput = e.target.querySelector('input[type="text"], input[type="email"]');
-      if (firstInput) {
-        firstInput.focus();
-      }
-    });
-
-    // Keyboard shortcuts
-    document.addEventListener('keydown', function(e) {
-      // Ctrl + N: New user
-      if (e.ctrlKey && e.key === 'n') {
-        e.preventDefault();
-        const addModal = new bootstrap.Modal(document.getElementById('addUserModal'));
-        addModal.show();
-      }
-
-      // ESC: Close modals
-      if (e.key === 'Escape') {
-        const openModals = document.querySelectorAll('.modal.show');
-        openModals.forEach(function(modal) {
-          const bsModal = bootstrap.Modal.getInstance(modal);
-          if (bsModal) {
-            bsModal.hide();
-          }
-        });
-      }
-    });
-
-    // Enhanced table interactions
-    document.querySelectorAll('tbody tr').forEach(function(row) {
-      row.addEventListener('click', function(e) {
-        if (e.target.closest('.btn-group')) return;
-
-        // Highlight selected row
-        document.querySelectorAll('tbody tr').forEach(r => r.classList.remove('table-active'));
-        this.classList.add('table-active');
-      });
-    });
-
-    // Smooth scrolling for pagination
-    document.querySelectorAll('.pagination a').forEach(function(link) {
-      link.addEventListener('click', function(e) {
-        window.scrollTo({
-          top: 0,
-          behavior: 'smooth'
-        });
-      });
-    });
-
-    // Status badge animation
-    document.querySelectorAll('.badge').forEach(function(badge) {
-      badge.addEventListener('mouseenter', function() {
-        this.style.transform = 'scale(1.1)';
-      });
-
-      badge.addEventListener('mouseleave', function() {
-        this.style.transform = 'scale(1)';
-      });
-    });
-
-    // Real-time search suggestion (if needed)
-    let searchTimeout;
-    if (searchInput) {
-      searchInput.addEventListener('input', function() {
-        clearTimeout(searchTimeout);
-        const query = this.value.trim();
-
-        if (query.length >= 2) {
-          searchTimeout = setTimeout(() => {
-            // Here you could implement AJAX search suggestions
-            console.log('Searching for:', query);
-          }, 500);
-        }
-      });
-    }
-
-    // Add loading states for forms
-    document.querySelectorAll('form').forEach(function(form) {
-      form.addEventListener('submit', function() {
-        const submitBtn = this.querySelector('button[type="submit"]');
-        if (submitBtn) {
-          const originalText = submitBtn.innerHTML;
-          submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Đang xử lý...';
-          submitBtn.disabled = true;
-
-          // Re-enable after 3 seconds as fallback
-          setTimeout(() => {
-            submitBtn.innerHTML = originalText;
-            submitBtn.disabled = false;
-          }, 3000);
-        }
-      });
-    });
-  </script>
-
+  <script src="../assets/js/users.js"></script>
   <style>
-    /* Additional responsive styles */
     @media (max-width: 768px) {
       .main-container {
         margin: 10px;
