@@ -1,24 +1,89 @@
 <?php
-    include '../includes/config.php';
-    include '../includes/functions.php';
-    $stats = getDashboardStats();
-    if (! isAdmin()) {
-        header('Location: dang_nhap');
-        exit;
-    }
-    // Check if user is logged in
-    if (! isset($_SESSION['user_id'])) {
-        header("Location: dang_nhap");
-        exit();
-    }
+include '../includes/config.php';
+include '../includes/functions.php';
 
-    // Get user data
-    $user_id = $_SESSION['user_id'];
-    $stmt    = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-    $stmt->execute([$user_id]);
-    $user = $stmt->fetch();
+if (!isAdmin()) {
+    header('Location: dang_nhap');
+    exit;
+}
+
+// Check session
+if (!isset($_SESSION['user_id'])) {
+    header("Location: dang_nhap");
+    exit();
+}
+
+// Lấy dữ liệu người dùng
+$user_id = $_SESSION['user_id'];
+$stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+$stmt->execute([$user_id]);
+$user = $stmt->fetch();
+
+// Lấy thống kê dashboard
+$stats = getDashboardStats();
+
+// Lấy đơn hàng gần đây
+$recentOrdersStmt = $pdo->query("SELECT o.mongo_id, o.final_price, o.status, u.name AS customer_name
+                                  FROM orders o
+                                  LEFT JOIN users u ON o.user_id = u.mongo_id
+                                  ORDER BY o.created_date DESC LIMIT 5");
+$recentOrders = $recentOrdersStmt->fetchAll();
+
+// Lấy hoạt động gần đây
+$activityStmt = $pdo->query("SELECT u.name AS user_name, o.mongo_id, o.created_date
+                              FROM orders o
+                              LEFT JOIN users u ON o.user_id = u.mongo_id
+                              ORDER BY o.created_date DESC LIMIT 5");
+$activities = $activityStmt->fetchAll();
+
+// Tính doanh thu theo danh mục từ items_json
+$ordersStmt = $pdo->query("SELECT items_json FROM orders");
+$categoryRevenue = [];
+
+while ($row = $ordersStmt->fetch()) {
+    $items = json_decode($row['items_json'], true);
+    foreach ($items as $item) {
+        $variantId = $item['variantId'] ?? null;
+        $quantity = $item['quantity'] ?? 0;
+        if (!$variantId || $quantity <= 0) continue;
+
+        // Lấy variant và product theo mongo_id
+        $variantStmt = $pdo->prepare("SELECT price, product_id FROM variants WHERE mongo_id = ? LIMIT 1");
+        $variantStmt->execute([$variantId]);
+        $variant = $variantStmt->fetch();
+
+        if ($variant) {
+            $productStmt = $pdo->prepare("SELECT category_id FROM products WHERE mongo_id = ? LIMIT 1");
+            $productStmt->execute([$variant['product_id']]);
+            $product = $productStmt->fetch();
+
+            if ($product) {
+                $catStmt = $pdo->prepare("SELECT name FROM categories WHERE mongo_id = ? LIMIT 1");
+                $catStmt->execute([$product['category_id']]);
+                $category = $catStmt->fetchColumn();
+
+                if ($category) {
+                    $categoryRevenue[$category] = ($categoryRevenue[$category] ?? 0) + $variant['price'] * $quantity;
+                }
+            }
+        }
+    }
+}
+
+// Xuất ra biến JS cho biểu đồ danh mục
+$categoryLabels = json_encode(array_keys($categoryRevenue));
+$categoryValues = json_encode(array_values($categoryRevenue));
+
+// Tổng hợp
+$totalRevenue = $stats['revenue'] ?? 0;
+$totalOrders = $stats['orders'] ?? 0;
+$activeUsers = $stats['users'] ?? 0;
+$totalProducts = $stats['product'] ?? 0;
+
+$revChange = $stats['rev_change'] ?? '0%';
+$orderChange = $stats['order_change'] ?? '0%';
+$userChange = $stats['user_change'] ?? '0%';
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -215,10 +280,14 @@
             </tr>
           </thead>
           <tbody>
-            <!-- Lặp hiển thị đơn hàng ở đây -->
-            <!-- Ví dụ -->
-            <tr><td>#PH-4826</td><td>John Smith</td><td><span class="...">Hoàn tất</span></td><td>$128.99</td></tr>
-            ...
+          <?php foreach ($recentOrders as $order): ?>
+          <tr>
+              <td>#<?= substr($order['mongo_id'], -6) ?></td>
+              <td><?= htmlspecialchars($order['customer_name']) ?></td>
+              <td><span class="badge bg-<?= $order['status'] === 'shipped' ? 'green' : ($order['status'] === 'cancelled' ? 'red' : 'yellow') ?>-500"><?= ucfirst($order['status']) ?></span></td>
+              <td><?= number_format($order['final_price'], 0, ',', '.') ?>đ</td>
+          </tr>
+          <?php endforeach; ?>
           </tbody>
         </table>
       </div>
@@ -229,22 +298,170 @@
       <h2 class="text-lg font-semibold mb-4">Hoạt Động Gần Đây</h2>
       <div class="space-y-4">
         <div class="flex items-start">
-          <div class="..."><svg ...></svg></div>
-          <div>
-            <p class="text-sm"><span class="font-medium">John Smith</span> đã đặt đơn hàng mới <span class="font-medium">#PH-4826</span></p>
-            <p class="text-xs text-gray-400 mt-1">2 giờ trước</p>
+          <?php foreach ($activities as $act): ?>
+          <div class="flex items-start">
+              <div class="w-8 h-8 bg-primary rounded-full flex items-center justify-center text-white mr-3">
+                  <svg ...></svg>
+              </div>
+              <div>
+                  <p class="text-sm"><span class="font-medium"><?= htmlspecialchars($act['user_name']) ?></span> đã đặt đơn hàng <span class="font-medium">#<?= substr($act['mongo_id'], -6) ?></span></p>
+                  <p class="text-xs text-gray-400 mt-1"><?= date('H:i d/m/Y', strtotime($act['created_date'])) ?></p>
+              </div>
           </div>
+          <?php endforeach; ?>
         </div>
-        ...
       </div>
     </div>
   </div>
 
 </main>
     </div>
-    <!-- Chart.js Scripts -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
-    <script src="../assets/js/dashboard.js"></script>
+    
+<script>
+// Gửi dữ liệu doanh thu danh mục cho biểu đồ JS
+const categoryLabels = <?= $categoryLabels ?>;
+const categoryValues = <?= $categoryValues ?>;
+
+
+// Vẽ biểu đồ doanh số theo danh mục
+window.addEventListener('DOMContentLoaded', () => {
+    const ctx = document.getElementById('categoryChart')?.getContext('2d');
+    if (ctx) {
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: categoryLabels,
+                datasets: [{
+                    label: 'Doanh số (VNĐ)',
+                    data: categoryValues,
+                    backgroundColor: 'rgba(54, 162, 235, 0.7)',
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(context.parsed.y);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: value => value.toLocaleString('vi-VN') + 'đ'
+                        }
+                    }
+                }
+            }
+        });
+    }
+});
+async function fetchRevenueData(type) {
+    const res = await fetch(`/ajax/get_revenue_data.php?type=${type}`);
+    const data = await res.json();
+    return {
+        labels: data.map(item => item.label),
+        values: data.map(item => item.total)
+    };
+}
+
+let revenueChart;
+
+async function initRevenueChart(type = 'month') {
+    const { labels, values } = await fetchRevenueData(type);
+    const ctx = document.getElementById('revenueChart').getContext('2d');
+
+    if (revenueChart) revenueChart.destroy();
+
+    const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+    gradient.addColorStop(0, 'rgba(108, 92, 231, 0.3)');
+    gradient.addColorStop(1, 'rgba(108, 92, 231, 0)');
+
+    revenueChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Doanh thu (VNĐ)',
+                data: values,
+                borderColor: '#a78bfa',
+                backgroundColor: gradient,
+                borderWidth: 3,
+                pointBackgroundColor: '#c084fc',
+                pointBorderColor: '#fff',
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                tension: 0.35,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                tooltip: {
+                    backgroundColor: '#1e293b',
+                    titleColor: '#fff',
+                    bodyColor: '#e5e7eb',
+                    padding: 10,
+                    borderColor: '#6c5ce7',
+                    borderWidth: 1
+                },
+                legend: {
+                    display: true,
+                    labels: {
+                        color: '#cbd5e1',
+                        font: {
+                            size: 12
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: '#cbd5e1',
+                        callback: (value) => value.toLocaleString() + 'đ'
+                    },
+                    grid: {
+                        color: 'rgba(255,255,255,0.05)'
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: '#cbd5e1'
+                    },
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+initRevenueChart();
+
+document.querySelector('select').addEventListener('change', (e) => {
+    const value = e.target.value;
+    let type = 'month';
+    if (value === '7 ngày qua') type = '7days';
+    else if (value === '3 tháng gần nhất') type = '3months';
+    else if (value === 'Năm nay') type = 'year';
+    initRevenueChart(type);
+});
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
 </body>
+
+<!-- <script src="../assets/js/dashboard.js"></script> -->
 </html>
 

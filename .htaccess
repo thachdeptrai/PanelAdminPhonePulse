@@ -13,7 +13,14 @@ RewriteRule ^users$ pages/users.php [L]
 
 RewriteRule ^products$ pages/products.php [L]
 
+RewriteRule ^orders$ pages/oders.php [L]
+# order_detail
+RewriteRule ^order_detail/([^/]+)$ /pages/order_detail.php?id=$1 [L,QSA]
+RewriteRule ^order_detail$ /pages/order_detail.php [L,QSA]
 RewriteRule ^product_detail/([^/]+)$ /pages/product_detail.php?id=$1 [L,QSA]
+# update_order
+RewriteRule ^ajax/update_order/([^/]+)$ ajax/update_order.php?id=$1 [L,QSA]
+RewriteRule ^ajax/update_order$ ajax/update_order.php [L,QSA]
 
 # ajax/update_variant.php
 RewriteRule ^ajax/update_variant/([^/]+)$ ajax/update_variant.php?id=$1 [L,QSA]
@@ -43,7 +50,7 @@ RewriteRule ^ajax/get_variant$ ajax/get_variant.php [L,QSA]
 # update product 
 RewriteRule ^ajax/update_product/([^/]+)$ ajax/update_product.php?id=$1 [L,QSA]
 RewriteRule ^ajax/update_product$ ajax/update_product.php [L,QSA]
-
+# oders
 ErrorDocument 404 /404.php
 
 # Nếu không match thì tự tìm file.php
