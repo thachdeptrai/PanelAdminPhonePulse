@@ -11,16 +11,39 @@ RewriteRule ^trang_chu$ pages/dashboard.php [L]
 
 RewriteRule ^users$ pages/users.php [L]
 
-# Chuyển users/view/123 => users.php?action=view&id=123
-# RewriteRule ^users/view/([0-9]+)$ users.php?action=view&id=$1 [L,QSA]
+RewriteRule ^products$ pages/products.php [L]
 
-# # Chuyển users/edit/123 => users.php?action=edit&id=123
-# RewriteRule ^users/edit/([0-9]+)$ users.php?action=edit&id=$1 [L,QSA]
+RewriteRule ^product_detail/([^/]+)$ /pages/product_detail.php?id=$1 [L,QSA]
 
-# # Chuyển users/delete/123 => users.php?action=delete&id=123
-# RewriteRule ^users/delete/([0-9]+)$ users.php?action=delete&id=$1 [L,QSA]
-RewriteCond %{THE_REQUEST} \.php [NC]   
-RewriteRule .* - [R=404,L]
+# ajax/update_variant.php
+RewriteRule ^ajax/update_variant/([^/]+)$ ajax/update_variant.php?id=$1 [L,QSA]
+RewriteRule ^ajax/update_variant$ ajax/update_variant.php [L,QSA]
+# add_product_images
+RewriteRule ^ajax/add_product_images/([^/]+)$ ajax/add_product_images.php?id=$1 [L,QSA]
+RewriteRule ^ajax/add_product_images$ ajax/add_product_images.php [L,QSA]
+# add product 
+RewriteRule ^ajax/add_product$ ajax/add_product.php [L,QSA]
+# add variant 
+RewriteRule ^ajax/add_variant/([^/]+)$ ajax/add_variant.php?id=$1 [L,QSA]
+# add variant
+RewriteRule ^ajax/add_variant$ ajax/add_variant.php [L,QSA]
+# delete variant
+RewriteRule ^ajax/delete_variant/([^/]+)$ ajax/delete_variant.php?id=$1 [L,QSA]
+# delete variant
+RewriteRule ^ajax/delete_variant$ ajax/delete_variant.php [L,QSA]
+# delete product
+RewriteRule ^ajax/delete_product/([^/]+)$ ajax/delete_product.php?id=$1 [L,QSA]
+RewriteRule ^ajax/delete_product$ ajax/delete_product.php [L,QSA]
+#delete image 
+RewriteRule ^ajax/delete_image/([^/]+)$ ajax/delete_image.php?id=$1 [L,QSA]
+RewriteRule ^ajax/delete_image$ ajax/delete_image.php [L,QSA]
+# get variant 
+RewriteRule ^ajax/get_variant/([^/]+)$ ajax/get_variant.php?id=$1 [L,QSA]
+RewriteRule ^ajax/get_variant$ ajax/get_variant.php [L,QSA]
+# update product 
+RewriteRule ^ajax/update_product/([^/]+)$ ajax/update_product.php?id=$1 [L,QSA]
+RewriteRule ^ajax/update_product$ ajax/update_product.php [L,QSA]
+
 ErrorDocument 404 /404.php
 
 # Nếu không match thì tự tìm file.php
