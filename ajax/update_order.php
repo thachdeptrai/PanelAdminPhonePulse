@@ -18,20 +18,61 @@ if (!$orderId) {
     exit;
 }
 
-// Lấy địa chỉ giao hàng từ DB
-$stmt = $pdo->prepare("SELECT shipping_address FROM orders WHERE mongo_id = ?");
+// Lấy trạng thái hiện tại từ DB
+$stmt = $pdo->prepare("SELECT status, shipping_status, payment_status, shipping_address FROM orders WHERE mongo_id = ?");
 $stmt->execute([$orderId]);
 $order = $stmt->fetch();
-$address = $order['shipping_address'] ?? '';
 
+if (!$order) {
+    echo "❌ Không tìm thấy đơn hàng.";
+    exit;
+}
+
+// 🧠 Logic chặn rollback trạng thái (không cho quay ngược)
+$allowedStatusFlow = [
+    'pending'   => ['confirmed', 'cancelled'],
+    'confirmed' => [],
+    'cancelled' => [],
+];
+
+$allowedShippingFlow = [
+    'not_shipped' => ['shipping', 'shipped'],
+    'shipping'    => ['shipped'],
+    'shipped'     => [],
+];
+
+$allowedPaymentFlow = [
+    'unpaid'   => ['paid', 'refunded'],
+    'paid'     => ['refunded'],
+    'refunded' => [],
+];
+
+function isValidFlow($current, $new, $flow) {
+    return $current === $new || in_array($new, $flow[$current] ?? []);
+}
+
+if (!isValidFlow($order['status'], $status, $allowedStatusFlow)) {
+    header("Location: /order_detail?id=$orderId&type=error&msg=" . urlencode("Không được quay ngược trạng thái đơn hàng."));
+    exit;
+}
+
+if (!isValidFlow($order['shipping_status'], $shipping, $allowedShippingFlow)) {
+    header("Location: /order_detail?id=$orderId&type=error&msg=" . urlencode("Không được quay ngược trạng thái đơn hàng."));
+    exit;
+}
+
+if (!isValidFlow($order['payment_status'], $payment, $allowedPaymentFlow)) {
+    header("Location: /order_detail?id=$orderId&type=error&msg=" . urlencode("Không được quay ngược trạng thái đơn hàng."));
+    exit;
+}
+
+// Xử lý update AI ngày giao hàng nếu cần
 $now = date('Y-m-d H:i:s');
-
-// Chuẩn bị SQL động
 $extraSql = "";
 $extraParams = [];
 
 if ($shipping === 'shipping') {
-    $estimatedDays = estimateShippingDaysAI($address); // 🧠 Dùng AI tính ngày
+    $estimatedDays = estimateShippingDaysAI($order['shipping_address']);
     $shippingDate = $now;
     $deliveredDate = date('Y-m-d H:i:s', strtotime("+$estimatedDays days"));
     $extraSql = ", shipping_date = ?, delivered_date = ?";
@@ -62,17 +103,8 @@ $success = $stmt->execute($params);
 
 // Kết quả
 if ($success) {
-    header("Location: /order_detail?id=$orderId&msg=updated");
-    $logMessage = sprintf(
-        "Order ID %s updated successfully. Status: %s, Shipping: %s, Payment: %s",
-        $orderId,
-        $status,
-        $shipping,
-        $payment
-    );
-    error_log($logMessage);
-        
+    header("Location: /order_detail?id=$orderId&msg=Cập Nhật Thành Công");
     exit;
 } else {
-    echo "❌ Cập nhật thất bại.";
+    header("Location: /order_detail?id=$orderId&type=error&msg=" . urlencode("Cập nhật thất bại."));
 }

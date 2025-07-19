@@ -36,10 +36,10 @@ $activityStmt = $pdo->query("SELECT u.name AS user_name, o.mongo_id, o.created_d
                               ORDER BY o.created_date DESC LIMIT 5");
 $activities = $activityStmt->fetchAll();
 
-// Tính doanh thu theo danh mục từ items_json
+// // Tính doanh thu theo danh mục từ items_json
 $ordersStmt = $pdo->query("SELECT items_json FROM orders");
 $categoryRevenue = [];
-
+ 
 while ($row = $ordersStmt->fetch()) {
     $items = json_decode($row['items_json'], true);
     foreach ($items as $item) {
@@ -230,35 +230,11 @@ $userChange = $stats['user_change'] ?? '0%';
 </div>
 
 </div>
-
-
-  <!-- Hàng biểu đồ -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-    <!-- Biểu đồ doanh thu -->
-    <div class="card p-6 rounded-lg lg:col-span-2">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-lg font-semibold">Tổng Quan Doanh Thu</h2>
-        <select class="bg-[#1e293b] text-white text-sm px-3 py-2 rounded border border-gray-600 focus:outline-none focus:border-primary">
-  <option>7 ngày qua</option>
-  <option selected>Tháng này</option>
-  <option>3 tháng gần nhất</option>
-  <option>Năm nay</option>
-</select>
-
-      </div>
-      <div class="h-80">
-        <canvas id="revenueChart"></canvas>
-      </div>
-    </div>
-
-    <!-- Doanh số theo danh mục -->
-    <div class="card p-6 rounded-lg">
-      <h2 class="text-lg font-semibold mb-4">Doanh Số Theo Danh Mục</h2>
-      <div class="h-80">
-        <canvas id="categoryChart"></canvas>
-      </div>
-    </div>
-  </div>
+<?php include '../assets/bieudo.php'; ?>
+<?php include '../assets/sanphambanchay.php'; ?>
+<!-- debug -->
+<!-- <?php include '../ajax/debug.php'; ?> -->
+ <?php include 'KhachHangThanThiet.php'; ?>
 
   <!-- Đơn hàng & Hoạt động gần đây -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -316,147 +292,173 @@ $userChange = $stats['user_change'] ?? '0%';
 
 </main>
     </div>
-    
 <script>
-// Gửi dữ liệu doanh thu danh mục cho biểu đồ JS
-const categoryLabels = <?= $categoryLabels ?>;
+  const categoryLabels = <?= $categoryLabels ?>;
 const categoryValues = <?= $categoryValues ?>;
 
+document.addEventListener('DOMContentLoaded', () => {
+  renderCategoryChart();
+  initRevenueChart(); // mặc định là "Tháng này"
 
-// Vẽ biểu đồ doanh số theo danh mục
-window.addEventListener('DOMContentLoaded', () => {
-    const ctx = document.getElementById('categoryChart')?.getContext('2d');
-    if (ctx) {
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: categoryLabels,
-                datasets: [{
-                    label: 'Doanh số (VNĐ)',
-                    data: categoryValues,
-                    backgroundColor: 'rgba(54, 162, 235, 0.7)',
-                    borderRadius: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(context.parsed.y);
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: value => value.toLocaleString('vi-VN') + 'đ'
-                        }
-                    }
-                }
-            }
-        });
+  const rangeSelect = document.getElementById('rangeSelect');
+  const customDateRange = document.getElementById('customDateRange');
+  const startInput = document.getElementById('startDate');
+  const endInput = document.getElementById('endDate');
+
+  // Khi chọn loại khoảng thời gian
+  rangeSelect.addEventListener('change', () => {
+    const type = rangeSelect.value;
+
+    if (type === 'custom') {
+      customDateRange.classList.remove('hidden');
+      const start = startInput.value;
+      const end = endInput.value;
+      if (start && end) initRevenueChart('custom', start, end);
+    } else {
+      customDateRange.classList.add('hidden');
+      initRevenueChart(type);
     }
+  });
+
+  // Khi chọn ngày custom
+  [startInput, endInput].forEach(input => {
+    input.addEventListener('change', () => {
+      if (rangeSelect.value === 'custom') {
+        const start = startInput.value;
+        const end = endInput.value;
+        if (start && end) {
+          initRevenueChart('custom', start, end);
+        }
+      }
+    });
+  });
 });
-async function fetchRevenueData(type) {
-    const res = await fetch(`/ajax/get_revenue_data.php?type=${type}`);
-    const data = await res.json();
-    return {
-        labels: data.map(item => item.label),
-        values: data.map(item => item.total)
-    };
+
+// ================= VẼ BIỂU ĐỒ DOANH SỐ THEO DANH MỤC =================
+function renderCategoryChart() {
+  const ctx = document.getElementById('categoryChart')?.getContext('2d');
+  if (!ctx) return;
+
+  new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: categoryLabels,
+      datasets: [{
+        label: 'Doanh số (VNĐ)',
+        data: categoryValues,
+        backgroundColor: 'rgba(54, 162, 235, 0.7)',
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => new Intl.NumberFormat('vi-VN', {
+              style: 'currency',
+              currency: 'VND'
+            }).format(ctx.parsed.y)
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: v => v.toLocaleString('vi-VN') + 'đ'
+          }
+        }
+      }
+    }
+  });
 }
 
+// ================= FETCH DỮ LIỆU DOANH THU TỪ PHP =================
+async function fetchRevenueData(type = 'month', start = '', end = '') {
+  let url = `/ajax/get_revenue_data.php?type=${type}`;
+  if (type === 'custom' && start && end) {
+    url += `&start=${start}&end=${end}`;
+  }
+
+  const res = await fetch(url);
+  const data = await res.json();
+  return {
+    labels: data.map(i => i.label),
+    values: data.map(i => i.total)
+  };
+}
+
+// ================= VẼ BIỂU ĐỒ DOANH THU =================
 let revenueChart;
 
-async function initRevenueChart(type = 'month') {
-    const { labels, values } = await fetchRevenueData(type);
-    const ctx = document.getElementById('revenueChart').getContext('2d');
+async function initRevenueChart(type = 'month', start = '', end = '') {
+  const { labels, values } = await fetchRevenueData(type, start, end);
+  const ctx = document.getElementById('revenueChart')?.getContext('2d');
+  if (!ctx) return;
 
-    if (revenueChart) revenueChart.destroy();
+  if (revenueChart) revenueChart.destroy();
 
-    const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-    gradient.addColorStop(0, 'rgba(108, 92, 231, 0.3)');
-    gradient.addColorStop(1, 'rgba(108, 92, 231, 0)');
+  const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+  gradient.addColorStop(0, 'rgba(108, 92, 231, 0.3)');
+  gradient.addColorStop(1, 'rgba(108, 92, 231, 0)');
 
-    revenueChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: labels,
-            datasets: [{
-                label: 'Doanh thu (VNĐ)',
-                data: values,
-                borderColor: '#a78bfa',
-                backgroundColor: gradient,
-                borderWidth: 3,
-                pointBackgroundColor: '#c084fc',
-                pointBorderColor: '#fff',
-                pointRadius: 4,
-                pointHoverRadius: 6,
-                tension: 0.35,
-                fill: true
-            }]
+  revenueChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Doanh thu (VNĐ)',
+        data: values,
+        borderColor: '#a78bfa',
+        backgroundColor: gradient,
+        borderWidth: 3,
+        pointBackgroundColor: '#c084fc',
+        pointBorderColor: '#fff',
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        tension: 0.35,
+        fill: true
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        tooltip: {
+          backgroundColor: '#1e293b',
+          titleColor: '#fff',
+          bodyColor: '#e5e7eb',
+          padding: 10,
+          borderColor: '#6c5ce7',
+          borderWidth: 1
         },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                tooltip: {
-                    backgroundColor: '#1e293b',
-                    titleColor: '#fff',
-                    bodyColor: '#e5e7eb',
-                    padding: 10,
-                    borderColor: '#6c5ce7',
-                    borderWidth: 1
-                },
-                legend: {
-                    display: true,
-                    labels: {
-                        color: '#cbd5e1',
-                        font: {
-                            size: 12
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        color: '#cbd5e1',
-                        callback: (value) => value.toLocaleString() + 'đ'
-                    },
-                    grid: {
-                        color: 'rgba(255,255,255,0.05)'
-                    }
-                },
-                x: {
-                    ticks: {
-                        color: '#cbd5e1'
-                    },
-                    grid: {
-                        display: false
-                    }
-                }
-            }
+        legend: {
+          display: true,
+          labels: {
+            color: '#cbd5e1',
+            font: { size: 12 }
+          }
         }
-    });
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: '#cbd5e1',
+            callback: v => v.toLocaleString('vi-VN') + 'đ'
+          },
+          grid: { color: 'rgba(255,255,255,0.05)' }
+        },
+        x: {
+          ticks: { color: '#cbd5e1' },
+          grid: { display: false }
+        }
+      }
+    }
+  });
 }
-
-initRevenueChart();
-
-document.querySelector('select').addEventListener('change', (e) => {
-    const value = e.target.value;
-    let type = 'month';
-    if (value === '7 ngày qua') type = '7days';
-    else if (value === '3 tháng gần nhất') type = '3months';
-    else if (value === 'Năm nay') type = 'year';
-    initRevenueChart(type);
-});
 
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>

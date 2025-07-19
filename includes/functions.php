@@ -104,3 +104,4 @@ function getDashboardStats()
 
     return $stats;
 }
+

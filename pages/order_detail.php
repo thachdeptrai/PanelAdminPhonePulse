@@ -76,7 +76,6 @@ foreach ($rawItems as $item) {
 <body class="bg-gray-900 text-white">
     <div class="max-w-5xl mx-auto p-6">
         <h1 class="text-2xl font-bold mb-4">🧾 Chi tiết đơn hàng: <?= $order['mongo_id'] ?></h1>
-
         <div class="mb-6">
             <p><strong>Khách hàng:</strong> <?= htmlspecialchars($order['name']) ?> (<?= htmlspecialchars($order['email']) ?>)</p>
             <p><strong>Ngày đặt:</strong> <?= date('d/m/Y H:i', strtotime($order['created_date'])) ?></p>
@@ -142,40 +141,59 @@ foreach ($rawItems as $item) {
             <input type="hidden" name="order_id" value="<?= $order['mongo_id'] ?>">
 
             <!-- Trạng thái đơn -->
+            <?php
+            // Mảng ánh xạ tiếng Anh → tiếng Việt
+            $statusLabels = [
+                'pending'   => '⏳ Chờ xác nhận',
+                'confirmed' => '✅ Đã xác nhận',
+                'cancelled' => '❌ Đã hủy'
+            ];
+            ?>
             <div>
                 <label class="block text-sm mb-1">Trạng thái đơn</label>
                 <select name="status" class="w-full bg-gray-700 text-white p-2 rounded">
-                    <?php
-                    $statuses = ['pending', 'confirmed', 'cancelled'];
-                    foreach ($statuses as $s):
-                    ?>
-                    <option value="<?= $s ?>" <?= $order['status'] == $s ? 'selected' : '' ?>><?= ucfirst($s) ?></option>
+                    <?php foreach ($statusLabels as $value => $label): ?>
+                        <option value="<?= $value ?>" <?= $order['status'] == $value ? 'selected' : '' ?>>
+                            <?= $label ?>
+                        </option>
                     <?php endforeach; ?>
                 </select>
             </div>
 
             <!-- Trạng thái vận chuyển -->
+            <?php
+            $shippingStatusLabels = [
+                'not_shipped' => '📦 Chưa giao',
+                'shipping'    => '🚚 Đang giao',
+                'shipped'     => '✅ Đã giao'
+            ];
+            ?>
             <div>
-                <label class="block text-sm mb-1">Vận chuyển</label>
+                <label class="block text-sm mb-1">Trạng thái vận chuyển</label>
                 <select name="shipping_status" class="w-full bg-gray-700 text-white p-2 rounded">
-                    <?php
-                    $shippingStatuses = ['not_shipped', 'shipping', 'shipped'];
-                    foreach ($shippingStatuses as $ss):
-                    ?>
-                    <option value="<?= $ss ?>" <?= $order['shipping_status'] == $ss ? 'selected' : '' ?>><?= ucfirst($ss) ?></option>
+                    <?php foreach ($shippingStatusLabels as $value => $label): ?>
+                        <option value="<?= $value ?>" <?= $order['shipping_status'] == $value ? 'selected' : '' ?>>
+                            <?= $label ?>
+                        </option>
                     <?php endforeach; ?>
                 </select>
             </div>
 
             <!-- Trạng thái thanh toán -->
+            <?php
+            $paymentStatusLabels = [
+                'unpaid'   => '💸 Chưa thanh toán',
+                'paid'     => '💰 Đã thanh toán',
+                'refunded' => '🔄 Đã hoàn tiền'
+            ];
+            ?>
             <div>
-                <label class="block text-sm mb-1">Thanh toán</label>
+                <label class="block text-sm mb-1">Trạng thái thanh toán</label>
                 <select name="payment_status" class="w-full bg-gray-700 text-white p-2 rounded">
-                    <?php
-                    $paymentStatuses = ['unpaid', 'paid', 'refunded'];
-                    foreach ($paymentStatuses as $ps):
-                    ?>
-                    <option value="<?= $ps ?>" <?= $order['payment_status'] == $ps ? 'selected' : '' ?>><?= ucfirst($ps) ?></option>
+                    <?php foreach ($paymentStatusLabels as $value => $label): ?>
+                        <option value="<?= $value ?>" <?= $order['payment_status'] == $value ? 'selected' : '' ?>>
+                            <?= $label ?>
+                        </option>
                     <?php endforeach; ?>
                 </select>
             </div>
@@ -190,5 +208,101 @@ foreach ($rawItems as $item) {
             <a href="orders" class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded-lg">← Quay lại</a>
         </div>
     </div>
+<!-- toast -->
+<div id="toast-container" class="fixed top-6 right-6 z-50 flex flex-col gap-3"></div>
 </body>
+
+<script>
+function showToast({ type = "success", message = "✔️ Thành công!", duration = 5000 }) {
+  const container = document.getElementById("toast-container");
+
+  const config = {
+  success: {
+    bg: "bg-gradient-to-r from-green-400 to-emerald-500",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 stroke-white mt-1" fill="none" viewBox="0 0 24 24" stroke-width="2">
+             <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+           </svg>`
+  },
+  error: {
+    bg: "bg-gradient-to-r from-red-400 to-rose-500",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 stroke-white mt-1" fill="none" viewBox="0 0 24 24" stroke-width="2">
+             <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+           </svg>`
+  },
+  warning: {
+    bg: "bg-gradient-to-r from-yellow-300 to-yellow-500 text-black",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 stroke-black mt-1" fill="none" viewBox="0 0 24 24" stroke-width="2">
+             <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v2m0 4h.01m-.01 0a9 9 0 100-18 9 9 0 000 18z" />
+           </svg>`
+  },
+  info: {
+    bg: "bg-gradient-to-r from-blue-400 to-sky-500",
+    icon: `<svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5 stroke-white mt-1" fill="none" viewBox="0 0 24 24" stroke-width="2">
+             <path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 12a9 9 0 100-18 9 9 0 000 18z" />
+           </svg>`
+  }
+};
+
+  const { bg, icon } = config[type] || config.success;
+
+  const toast = document.createElement("div");
+  toast.className = `
+    toast-item relative flex items-start gap-3 px-4 py-3 rounded-2xl shadow-xl backdrop-blur-lg border border-white/20
+    text-white ${bg} animate-toast-in overflow-hidden w-[320px]
+  `;
+
+  toast.innerHTML = `
+    <div class="w-6 h-6">${icon}</div>
+    <div class="flex-1 text-sm pt-1">${message}</div>
+    <button class="ml-2 text-xl hover:opacity-70" onclick="this.closest('.toast-item').remove()">×</button>
+    <div class="absolute bottom-0 left-0 h-1 bg-white/40 progress-bar rounded-full"></div>
+  `;
+
+  container.appendChild(toast);
+
+  // Animate progress
+  const progress = toast.querySelector(".progress-bar");
+  progress.style.width = "100%";
+  progress.style.transition = `width ${duration}ms linear`;
+  setTimeout(() => progress.style.width = "0%", 50);
+
+  // Auto close
+  setTimeout(() => {
+    toast.classList.add("animate-toast-out");
+    setTimeout(() => toast.remove(), 100);
+  }, duration);
+}
+
+// Auto toast from URL
+const params = new URLSearchParams(window.location.search);
+const msg = params.get("msg");
+const type = params.get("type");
+if (msg) {
+  showToast({ type: type || "success", message: decodeURIComponent(msg) });
+  setTimeout(() => {
+    params.delete("msg");
+    params.delete("type");
+    window.history.replaceState({}, "", window.location.pathname + '?' + params.toString());
+  }, 500);
+}
+</script>
+<style>
+@keyframes toastIn {
+  0% { opacity: 0; transform: translateX(100%); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toastOut {
+  0% { opacity: 1; transform: translateX(0); }
+  100% { opacity: 0; transform: translateX(100%); }
+}
+
+.animate-toast-in {
+  animation: toastIn 0.4s ease-out forwards;
+}
+
+.animate-toast-out {
+  animation: toastOut 0.4s ease-in forwards;
+}
+</style>
 </html>
