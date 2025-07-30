@@ -43,7 +43,7 @@ if ($role !== '') {
 }
 
 if ($status !== '') {
-    $filter['status'] = ($status === 'active') ? 1 : 0;
+    $filter['status'] = ($status === 'true') ? true : false;
 }
 
 $options = [
@@ -248,14 +248,14 @@ $baseUrl = $protocol . '://' . $host;
 
             <select name="role" class="bg-gray-800/50 border border-gray-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
               <option value="">Tất cả vai trò</option>
-              <option value="1" <?= $role == 1 ? 'selected' : '' ?>>Quản trị viên</option>
-              <option value="0" <?= $role == 0 ? 'selected' : '' ?>>Người dùng</option>
+              <option value="true" <?= $role == true ? 'selected' : '' ?>>Quản trị viên</option>
+              <option value="false" <?= $role == false ? 'selected' : '' ?>>Người dùng</option>
             </select>
 
             <select name="status" class="bg-gray-800/50 border border-gray-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
               <option value="">Tất cả trạng thái</option>
-              <option value="1" <?= $status ==  1 ? 'selected' : '' ?>>Đang hoạt động</option>
-              <option value="0" <?= $status == 0 ? 'selected' : '' ?>>Bị khóa</option>
+              <option value="true" <?= $status ==  true ? 'selected' : '' ?>>Đang hoạt động</option>
+              <option value="false" <?= $status == false ? 'selected' : '' ?>>Bị khóa</option>
             </select>
 
             <button type="submit" class="bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white px-6 py-3 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg">
@@ -303,7 +303,7 @@ $baseUrl = $protocol . '://' . $host;
                            alt="Avatar" class="w-12 h-12 rounded-full object-cover border-2 border-purple-500/30 mr-4">
                       <div>
                         <div class="font-semibold text-white"><?= htmlspecialchars($user['name']) ?></div>
-                        <div class="text-sm text-gray-400">ID: #<?=(string) $user['_id'] ?></div>
+                        <!-- <div class="text-sm text-gray-400">ID: #<?=(string) $user['_id'] ?></div> -->
                         <?php if ($user['gender']): ?>
                         <div class="text-xs text-gray-500"><?= $user['gender'] === 'male' ? '👨' : ($user['gender'] === 'female' ? '👩' : '👤') ?> <?= ucfirst($user['gender']) ?></div>
                         <?php endif; ?>
@@ -320,22 +320,24 @@ $baseUrl = $protocol . '://' . $host;
                     <?php endif; ?>
                   </td>
                   <td class="px-6 py-4">
-                    <span class="px-3 py-1 rounded-full text-xs font-medium <?= $user['role'] == 1 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30' ?>">
-                      <?= $user['role'] == 1 ? 'Quản trị viên' : 'Người dùng' ?>
+                    <span class="px-3 py-1 rounded-full text-xs font-medium <?= $user['role'] == true ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30' ?>">
+                      <?= $user['role'] == true ? 'Quản trị viên' : 'Người dùng' ?>
                     </span>
                   </td>
                   <td class="px-6 py-4">
-                    <span class="px-3 py-1 rounded-full text-xs font-medium <?= $user['status'] == 1 ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30' ?>">
-                      <?= $user['status'] == 1 ? 'Hoạt động' : 'Bị khóa' ?>
+                    <span class="px-3 py-1 rounded-full text-xs font-medium <?= $user['status'] ==true ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30' ?>">
+                      <?= $user['status'] == true ? 'Hoạt động' : 'Bị khóa' ?>
                     </span>
                   </td>
                   <td class="px-6 py-4">
-                    <span class="px-2 py-1 rounded-full text-xs font-medium <?= $user['is_verified'] == 1 ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300' ?>">
-                      <?= $user['is_verified'] == 1 ? '✓ Đã xác thực' : '⏳ Chưa xác thực' ?>
+                    <span class="px-2 py-1 rounded-full text-xs font-medium <?= $user['is_verified'] == true ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300' ?>">
+                      <?= $user['is_verified'] == true ? '✓ Đã xác thực' : '⏳ Chưa xác thực' ?>
                     </span>
                   </td>
                   <td class="px-6 py-4">
-                    <div class="text-gray-400"><?= date('d/m/Y', strtotime($user['created_date'])) ?></div>
+                  <div class="text-gray-400">
+                      <?= $user['created_date']->toDateTime()->format('d/m/Y') ?>
+                  </div>
                     <!-- <?php if ($user['last_login']): ?> -->
                     <!-- <div class="text-xs text-gray-500">Đăng nhập: <?= date('d/m/Y H:i', strtotime($user['last_login'])) ?></div> -->
                     <!-- <?php endif; ?> -->
@@ -347,8 +349,8 @@ $baseUrl = $protocol . '://' . $host;
                         ✏️
                       </button>
                       <button onclick="toggleStatus('<?= (string)$user['_id'] ?>', <?= $user['status'] ?>)" title="<?= $user['status'] == 1 ? 'Khóa tài khoản' : 'Mở khóa tài khoản' ?>"
-                        class="w-9 h-9 <?= $user['status'] == 1 ? 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300' : 'bg-green-500/20 hover:bg-green-500/30 text-green-300' ?> rounded-lg transition-all duration-300 transform hover:scale-110 flex items-center justify-center">
-                        <?= $user['status'] == 1 ? '🔒' : '🔓' ?>
+                        class="w-9 h-9 <?= $user['status'] == true ? 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300' : 'bg-green-500/20 hover:bg-green-500/30 text-green-300' ?> rounded-lg transition-all duration-300 transform hover:scale-110 flex items-center justify-center">
+                        <?= $user['status'] == true ? '🔒' : '🔓' ?>
                       </button>
                       <button onclick="deleteUser('<?= (string)$user['_id'] ?>')" title="Xóa người dùng"
                         class="w-9 h-9 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg transition-all duration-300 transform hover:scale-110 flex items-center justify-center">
@@ -552,9 +554,9 @@ function editUser(userId) {
       document.getElementById('phone').value = user.phone || '';
       document.getElementById('address').value = user.address || '';
       document.getElementById('gender').value = user.gender || '';
-      document.getElementById('role').value = user.role ?? '0';
-      document.getElementById('status').value = user.status ?? '1';
-      document.getElementById('isVerified').value = user.is_verified ?? '0';
+      document.getElementById('role').value = user.role ?? 'false';
+      document.getElementById('status').value = user.status ?? 'true';
+      document.getElementById('isVerified').value = user.is_verified ?? 'false';
       showModal();
     })
     .catch(err => {

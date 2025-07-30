@@ -20,9 +20,10 @@ $email  = $_POST['email'] ?? '';
 $phone  = $_POST['phone'] ?? '';
 $address = $_POST['address'] ?? '';
 $gender  = $_POST['gender'] ?? '';
-$role   = (int)($_POST['role'] ?? 0);
-$status = (int)($_POST['status'] ?? 1);
-$is_verified = (int)($_POST['is_verified'] ?? 0);
+$role       = filter_var($_POST['role'] ?? false, FILTER_VALIDATE_BOOLEAN);
+$status      = filter_var($_POST['status'] ?? true, FILTER_VALIDATE_BOOLEAN);
+$is_verified = filter_var($_POST['is_verified'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
 
 if (!$idRaw || !$name || !$email) {
     echo json_encode(['success' => false, 'message' => 'Thiếu dữ liệu']);

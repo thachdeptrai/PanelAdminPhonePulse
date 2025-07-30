@@ -1,7 +1,8 @@
-
 <?php
-include '../includes/config.php';
-include '../includes/functions.php';
+require_once '../includes/config.php';
+require_once '../includes/functions.php';
+
+use MongoDB\BSON\ObjectId;
 
 header('Content-Type: application/json');
 
@@ -17,36 +18,36 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
-    $variant_id = $input['id'] ?? 0;
+    $variant_id = $input['id'] ?? '';
 
     if (!$variant_id) {
         echo json_encode(['success' => false, 'message' => 'ID biến thể không hợp lệ']);
         exit;
     }
 
-    $pdo->beginTransaction();
+    try {
+        $variantOid = new ObjectId($variant_id);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'ID không hợp lệ']);
+        exit;
+    }
 
-    // Delete related cart items
-    $deleteCartStmt = $pdo->prepare("DELETE FROM cart WHERE variant_id = ?");
-    $deleteCartStmt->execute([$variant_id]);
+    // Xoá variant
+    $deleteVariant = $mongoDB->Variant->deleteOne(['_id' => $variantOid]);
 
-    // Delete related order items
-    $deleteOrderItemsStmt = $pdo->prepare("DELETE FROM order_items WHERE variant_id = ?");
-    $deleteOrderItemsStmt->execute([$variant_id]);
+    // Xoá liên quan trong cart
+    $mongoDB->Cart->deleteMany(['variant_id' => $variantOid]);
 
-    // Delete variant
-    $deleteVariantStmt = $pdo->prepare("DELETE FROM variants WHERE id = ?");
-    $result = $deleteVariantStmt->execute([$variant_id]);
+    // Xoá liên quan trong order_items
+    $mongoDB->OrderItem->deleteMany(['variant_id' => $variantOid]);
 
-    if ($result) {
-        $pdo->commit();
+    if ($deleteVariant->getDeletedCount() > 0) {
         echo json_encode(['success' => true, 'message' => 'Xóa biến thể thành công']);
     } else {
-        $pdo->rollback();
-        echo json_encode(['success' => false, 'message' => 'Không thể xóa biến thể']);
+        echo json_encode(['success' => false, 'message' => 'Không tìm thấy biến thể để xóa']);
     }
 } catch (Exception $e) {
-    $pdo->rollback();
     echo json_encode(['success' => false, 'message' => 'Đã xảy ra lỗi: ' . $e->getMessage()]);
 }
+
 ?>

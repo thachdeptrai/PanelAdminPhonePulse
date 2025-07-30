@@ -32,6 +32,7 @@ $mongoClient = new Client($MONGO_URI);
 
 // Lấy database 1 lần duy nhất
 $mongoDB = $mongoClient->selectDatabase($MONGO_DB_NAME);
+$mongo = $mongoClient->selectDatabase($MONGO_DB_NAME);
 
 // // Đặt tên site
 // define('SITE_NAME', 'PhonePulse Admin');

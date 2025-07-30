@@ -1,8 +1,9 @@
-
 <?php
-// ===== ajax/add_variant.php =====
-include '../includes/config.php';
-include '../includes/functions.php';
+require_once '../includes/config.php';
+require_once '../includes/functions.php';
+
+use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
 
 header('Content-Type: application/json');
 
@@ -17,37 +18,51 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-    $product_id = $_POST['product_id'] ?? 0;
-    $color_id = $_POST['color_id'] ?? '';
-    $size_id = $_POST['size_id'] ?? '';
-    $quantity = $_POST['quantity'] ?? 0;
-    $price = $_POST['price'] ?? 0;
+    $product_id = $_POST['product_id'] ?? '';
+    $color_id   = $_POST['color_id'] ?? '';
+    $size_id    = $_POST['size_id'] ?? '';
+    $quantity   = (int) ($_POST['quantity'] ?? 0);
+    $price      = (float) ($_POST['price'] ?? 0);
 
-    if (!$product_id || empty($color_id) || empty($size_id) || $quantity < 0 || $price < 0) {
+    if (!$product_id || !$color_id || !$size_id || $quantity < 0 || $price < 0) {
         echo json_encode(['success' => false, 'message' => 'Vui lòng điền đầy đủ thông tin']);
         exit;
     }
 
-    // Check if variant already exists
-    $checkStmt = $pdo->prepare("SELECT id FROM variants WHERE product_id = ? AND color_id = ? AND size_id = ?");
-    $checkStmt->execute([$product_id, $color_id, $size_id]);
-    
-    if ($checkStmt->fetch()) {
+    try {
+        $product_oid = new ObjectId($product_id);
+        $color_oid   = new ObjectId($color_id);
+        $size_oid    = new ObjectId($size_id);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'ID không hợp lệ']);
+        exit;
+    }
+
+    // Kiểm tra biến thể trùng
+    $existing = $mongoDB->Variant->findOne([
+        'product_id' => $product_oid,
+        'color_id'   => $color_oid,
+        'size_id'    => $size_oid
+    ]);
+
+    if ($existing) {
         echo json_encode(['success' => false, 'message' => 'Biến thể này đã tồn tại']);
         exit;
     }
 
-    $stmt = $pdo->prepare("INSERT INTO variants (product_id, color_id, size_id, quantity, price, created_date, modified_date)
-                       VALUES (?, ?, ?, ?, ?, NOW(), NOW())");
+    // Thêm biến thể
+    $now = new UTCDateTime();
+    $insert = $mongoDB->Variant->insertOne([
+        'product_id'    => $product_oid,
+        'color_id'      => $color_oid,
+        'size_id'       => $size_oid,
+        'quantity'      => $quantity,
+        'price'         => $price,
+        'created_date'  => $now,
+        'modified_date' => $now
+    ]);
 
-$result = $stmt->execute([$product_id, $color_id, $size_id, $quantity, $price]);
-
-    if ($result) {
-        echo json_encode(['success' => true, 'message' => 'Thêm biến thể thành công']);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Không thể thêm biến thể']);
-    }
+    echo json_encode(['success' => true, 'message' => 'Thêm biến thể thành công']);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'message' => 'Đã xảy ra lỗi: ' . $e->getMessage()]);
 }
-?>

@@ -1,75 +1,99 @@
 <?php
-    include '../includes/config.php';
-    include '../includes/functions.php';
+require_once '../includes/config.php';
+require_once '../includes/functions.php';
 
-    if (! isAdmin()) {
-        header('Location: ../dang_nhap');
-        exit;
-    }
+use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\Regex;
 
-    // Get product ID from URL
-    $product_id = $_GET['id'] ?? 0;
+if (!isAdmin()) {
+    header('Location: ../dang_nhap');
+    exit;
+}
 
-    if (! $product_id) {
-        header('Location: products');
-        echo '<script>alert("Sản phẩm không hợp lệ!");</script>';
-        exit;
-    }
+$product_id = $_GET['id'] ?? '';
 
-    // Get user data
-    $user_id = $_SESSION['user_id'];
-    $stmt    = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-    $stmt->execute([$user_id]);
-    $user = $stmt->fetch();
+try {
+    $productObjectId = new ObjectId($product_id);
+} catch (Exception $e) {
+    header('Location: ../products');
+    echo '<script>alert("ID sản phẩm không hợp lệ!");</script>';
+    exit;
+}
 
-    // Get product with category info
-    $stmt = $pdo->prepare("
-    SELECT p.*, c.name as category_name
-    FROM products p
-    LEFT JOIN categories c ON p.category_id = c.mongo_id
-    WHERE p.mongo_id = ?
-");
-    $stmt->execute([$product_id]);
-    $product = $stmt->fetch();
+// Get user data
+$user_id = $_SESSION['user_id'];
+$user = $mongoDB->users->findOne(['_id' => new ObjectId($user_id)]);
 
-    if (! $product) {
-        header('Location: /products');
-        echo '<script>alert("Sản phẩm không tồn tại!");</script>';
-        exit;
-    }
+// Get product with category info
+$product = $mongoDB->Product->aggregate([
+    ['$match' => ['_id' => new ObjectId($product_id)]],
+    ['$lookup' => [
+        'from' => 'Category',
+        'localField' => 'category_id',
+        'foreignField' => '_id',
+        'as' => 'category'
+    ]],
+    ['$unwind' => ['path' => '$category', 'preserveNullAndEmptyArrays' => true]]
+])->toArray();
+$product = $product[0] ?? null;
 
-    // Get product images
-    $stmt = $pdo->prepare("SELECT * FROM product_images WHERE product_id = ? ORDER BY modified_date");
-    $stmt->execute([$product_id]);
-    $images = $stmt->fetchAll();
+if (!$product) {
+    echo '<script>alert("Sản phẩm không tồn tại!"); window.location.href="../products";</script>';
+    exit;
+}
 
-    // Get variants with color and size info
-    $stmt = $pdo->prepare("
-    SELECT
-        v.id as id, v.product_id, v.color_id, v.size_id, v.quantity, v.price,
-        c.color_name AS color_name,
-        s.size_name AS size_name,
-        s.storage AS storage
-    FROM variants v
-    LEFT JOIN colors c ON v.color_id = c.mongo_id
-    LEFT JOIN sizes s ON v.size_id = s.mongo_id
-    WHERE v.product_id = ?
-    ORDER BY c.color_name, s.size_name, v.quantity, v.price
-");
+// Get product images
+$images = $mongoDB->ProductImage->find([
+    'product_id' => new ObjectId($product_id)
+], [
+    'sort' => ['modified_date' => 1]
+]);
+$images = iterator_to_array($images);
 
-    $stmt->execute([$product_id]);
-    $variants = $stmt->fetchAll();
+// Get variants with color and size info
+$variants = $mongoDB->Variant->aggregate([
+    ['$match' => ['product_id' => new ObjectId($product_id)]],
+    ['$lookup' => [
+        'from' => 'Color',
+        'localField' => 'color_id',
+        'foreignField' => '_id',
+        'as' => 'color'
+    ]],
+    ['$lookup' => [
+        'from' => 'Size',
+        'localField' => 'size_id',
+        'foreignField' => '_id',
+        'as' => 'size'
+    ]],
+    ['$unwind' => ['path' => '$color', 'preserveNullAndEmptyArrays' => true]],
+    ['$unwind' => ['path' => '$size', 'preserveNullAndEmptyArrays' => true]],
+    ['$project' => [
+        'id' => 1,  
+        'product_id' => 1,
+        'color_id' => 1,
+        'size_id' => 1,
+        'quantity' => 1,
+        'price' => 1,
+        'color_name' => '$color.color_name',
+        'size_name' => '$size.size_name',
+        'storage' => '$size.storage'
+    ]],
+    ['$sort' => ['color_name' => 1, 'size_name' => 1, 'quantity' => 1, 'price' => 1]]
+]);
+$variants = iterator_to_array($variants);
 
-    // Get all colors and sizes for adding new variants
-    $colorsStmt = $pdo->query("SELECT * FROM colors ORDER BY color_name");
-    $colors     = $colorsStmt->fetchAll();
+// Get all colors
+$colors = $mongoDB->Color->find([], ['sort' => ['color_name' => 1]]);
+$colors = iterator_to_array($colors);
 
-    $sizesStmt = $pdo->query("SELECT * FROM sizes ORDER BY size_name");
-    $sizes     = $sizesStmt->fetchAll();
+// Get all sizes
+$sizes = $mongoDB->Size->find([], ['sort' => ['size_name' => 1]]);
+$sizes = iterator_to_array($sizes);
 
-    // Get all categories for edit form
-    $categoriesStmt = $pdo->query("SELECT * FROM categories");
-    $categories     = $categoriesStmt->fetchAll();
+// Get all categories
+$categories = $mongoDB->Category->find();
+$categories = iterator_to_array($categories);
+
 ?>
 
 <!DOCTYPE html>
@@ -105,7 +129,7 @@
                 <button onclick="openEditModal()" class="bg-primary hover:bg-primary-dark px-4 py-2 rounded-lg font-medium">
                     Chỉnh sửa
                 </button>
-                <button onclick="deleteProduct(<?php echo $product['mongo_id'] ?>)" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-medium">
+                <button onclick="deleteProduct('<?php echo (string)$product['_id'] ?>')" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-medium">
                     Xóa sản phẩm
                 </button>
             </div>
@@ -145,14 +169,14 @@
                          class="h-16 w-full object-contain p-1 rounded-lg border border-gray-300 bg-white hover:border-primary transition" />
 
                     <!-- Delete Button -->
-                    <button onclick="deleteImage(<?php echo $image['id'] ?>)"
-                            class="absolute top-0 right-0 bg-black/60 text-red-400 hover:text-red-300 p-1 rounded-bl-lg hidden group-hover:block transition"
-                            title="Xoá ảnh">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                                  d="M6 18L18 6M6 6l12 12"></path>
-                        </svg>
-                    </button>
+                    <button onclick="deleteImage('<?php echo (string)$image['_id']; ?>')"
+                        class="absolute top-0 right-0 bg-black/60 text-red-400 hover:text-red-300 p-1 rounded-bl-lg hidden group-hover:block transition"
+                        title="Xoá ảnh">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
                 </div>
             <?php endforeach; ?>
         </div>
@@ -263,11 +287,11 @@
                     </div>
 
                     <div class="flex items-center space-x-2">
-                        <button onclick="editVariant(<?php echo $variant['id'] ?>)"
+                        <button onclick="editVariant('<?php echo(string) $variant['_id'] ?>')"
                                 class="text-blue-400 hover:text-blue-300" title="Chỉnh sửa">
                             ✎
                         </button>
-                        <button onclick="deleteVariant(<?php echo $variant['id'] ?>)"
+                        <button onclick="deleteVariant('<?php echo(string) $variant['_id'] ?>')"
                                 class="text-red-400 hover:text-red-300" title="Xóa">
                             🗑
                         </button>
@@ -301,7 +325,7 @@
         <!-- Form Start -->
         <form id="editForm" class="space-y-6">
 
-            <input type="hidden" name="id" value="<?php echo $product['id'] ?>">
+            <input type="hidden" name="id" value="<?php echo(string) $product['_id'] ?>">
 
             <!-- Product Name + Category -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -318,7 +342,7 @@
                             class="w-full rounded-xl bg-dark text-black border border-gray-600 px-4 py-2 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition">
                         <option value="">-- Chọn danh mục --</option>
                         <?php foreach ($categories as $category): ?>
-                            <option value="<?php echo $category['mongo_id'] ?>"<?php echo $category['mongo_id'] == $product['category_id'] ? 'selected' : '' ?>>
+                            <option value="<?php echo $category['_id'] ?>"<?php echo $category['_id'] == $product['category_id'] ? 'selected' : '' ?>>
                                 <?php echo htmlspecialchars($category['name']) ?>
                             </option>
                         <?php endforeach; ?>
@@ -341,7 +365,7 @@
 
                             <div class="flex items-center gap-2">
                                 <span class="text-gray-400 text-sm">Giá:</span>
-                                <input type="number" name="price[<?php echo $variant['id'] ?>]"
+                                <input type="number" name="price[<?php echo $variant['_id'] ?>]"
                                        value="<?php echo $variant['price'] ?>"
                                        required min="0"
                                        class="w-32 rounded-md bg-dark text-black border border-gray-600 px-3 py-1.5 text-right focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition" />
@@ -390,7 +414,7 @@
 
         <!-- Form -->
         <form id="imageForm" enctype="multipart/form-data" class="space-y-5">
-            <input type="hidden" name="product_id" value="<?php echo $product['mongo_id'] ?>">
+            <input type="hidden" name="product_id" value="<?php echo $product['_id'] ?>">
 
             <!-- File Upload -->
             <div>
@@ -408,7 +432,7 @@
 
             <!-- Image URL -->
             <div>
-            <input type="hidden" id="imageProductId" name="product_id" value="<?php echo $product['mongo_id'] ?? '' ?>">
+            <input type="hidden" id="imageProductId" name="product_id" value="<?php echo $product['_id'] ?? '' ?>">
 
                 <label class="block text-sm font-medium text-gray-300 mb-2">🌐 Dán liên kết hình ảnh</label>
                 <input type="url" name="image_url" placeholder="https://example.com/image.jpg"
@@ -445,7 +469,7 @@
         </div>
 
         <form id="variantForm" class="space-y-5 text-sm text-white">
-            <input type="hidden" name="product_id" value="<?php echo $product['mongo_id'] ?>">
+            <input type="hidden" name="product_id" value="<?php echo $product['_id'] ?>">
 
             <!-- Color -->
             <div>
@@ -454,7 +478,7 @@
                         class="w-full bg-[#2a2a3b] border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-primary">
                     <option value="">-- Chọn màu --</option>
                     <?php foreach ($colors as $color): ?>
-                        <option value="<?php echo $color['mongo_id'] ?>">
+                        <option value="<?php echo $color['_id'] ?>">
                             <?php echo htmlspecialchars($color['color_name']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -468,7 +492,7 @@
                         class="w-full bg-[#2a2a3b] border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:border-primary">
                     <option value="">-- Chọn dung lượng --</option>
                     <?php foreach ($sizes as $size): ?>
-                        <option value="<?php echo $size['mongo_id'] ?>">
+                        <option value="<?php echo $size['_id'] ?>">
                             <?php echo htmlspecialchars($size['size_name']) ?> -<?php echo htmlspecialchars($size['storage']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -529,7 +553,7 @@
                         class="w-full bg-gray-800 text-white border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary transition">
                     <option value="">Chọn màu</option>
                     <?php foreach ($colors as $color): ?>
-                        <option value="<?php echo $color['mongo_id'] ?>">
+                        <option value="<?php echo $color['_id'] ?>">
                             <?php echo htmlspecialchars($color['color_name']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -543,7 +567,7 @@
                         class="w-full bg-gray-800 text-white border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary transition">
                     <option value="">Chọn kích thước</option>
                     <?php foreach ($sizes as $size): ?>
-                        <option value="<?php echo $size['mongo_id'] ?>">
+                        <option value="<?php echo $size['_id'] ?>">
                             <?php echo htmlspecialchars($size['size_name']) ?> -<?php echo htmlspecialchars($size['storage']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -741,7 +765,7 @@
                 .then(data => {
                     if (data.success) {
                         alert('Xóa sản phẩm thành công!');
-                        window.location.href = '/products';
+                        window.location.href = '../products';
                     } else {
                         alert('Lỗi: ' + data.message);
                     }

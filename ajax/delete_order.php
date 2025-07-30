@@ -1,6 +1,8 @@
 <?php
-include '../includes/config.php';
-include '../includes/functions.php';
+require_once '../includes/config.php';
+require_once '../includes/functions.php';
+
+use MongoDB\BSON\ObjectId;
 
 if (!isAdmin()) {
     header('Location: dang_nhap');
@@ -13,11 +15,20 @@ if (!$id) {
     exit;
 }
 
-$stmt = $pdo->prepare("DELETE FROM orders WHERE mongo_id = ?");
-$success = $stmt->execute([$id]);
+// Validate ObjectId
+try {
+    $objectId = new ObjectId($id);
+} catch (Exception $e) {
+    echo "ID không hợp lệ";
+    exit;
+}
 
-if ($success) {
+// Xóa đơn hàng
+$deleteResult = $mongoDB->orders->deleteOne(['_id' => $objectId]);
+
+if ($deleteResult->getDeletedCount() > 0) {
     header("Location: orders.php?msg=deleted");
+    exit;
 } else {
     echo "Xóa thất bại.";
 }

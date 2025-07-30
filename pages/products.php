@@ -1,6 +1,9 @@
 <?php 
-include '../includes/config.php';
-include '../includes/functions.php';
+require_once '../includes/config.php';
+require_once '../includes/functions.php';
+
+use MongoDB\BSON\Regex;
+use MongoDB\BSON\ObjectId;
 
 if (!isAdmin()) {
     header('Location: dang_nhap');
@@ -8,64 +11,109 @@ if (!isAdmin()) {
 }
 
 // Get user data
-$user_id = $_SESSION['user_id'];
-$stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-$stmt->execute([$user_id]);
-$user = $stmt->fetch();
-
-// Handle search and pagination
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
-$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-$limit = 10;
-$offset = ($page - 1) * $limit;
-
-// Build search query
-$searchCondition = '';
-$searchParams = [];
-
-if ($search) {
-    $searchCondition = "WHERE p.product_name LIKE ? OR p.description LIKE ? OR c.name LIKE ?";
-    $searchParams = ["%$search%", "%$search%", "%$search%"];
+$user_id = $_SESSION['user_id'] ?? null;
+if (!$user_id) {
+    die('Không có user_id');
 }
 
-// Get products with related data
-$sql = "SELECT 
-            p.id,p.mongo_id, p.product_name, p.description, 
-            c.name as category_name,
-            SUM(v.quantity) as total_quantity,
-            MAX(v.price) as price,
-            GROUP_CONCAT(DISTINCT pi.image_url SEPARATOR ',') as images
-        FROM products p
-        LEFT JOIN categories c ON p.category_id = c.mongo_id
-        LEFT JOIN variants v ON p.mongo_id = v.product_id
-        LEFT JOIN product_images pi ON p.mongo_id = pi.product_id
-        $searchCondition
-        GROUP BY p.mongo_id
-        ORDER BY p.created_date DESC
-        LIMIT $limit OFFSET $offset";
+try {
+    $user = $mongo->users->findOne(['_id' => new ObjectId($user_id)]);
+} catch (Exception $e) {
+    die('User không tồn tại');
+}
 
-$stmt = $pdo->prepare($sql);
-$stmt->execute($searchParams);
-$products = $stmt->fetchAll();
+// Pagination + Search
+$search = $_GET['search'] ?? '';
+$page = max(1, (int)($_GET['page'] ?? 1));
+$limit = 10;
+$skip = ($page - 1) * $limit;
 
-// Get total count for pagination
-$countSql = "SELECT COUNT(DISTINCT p.mongo_id) as total
-             FROM products p
-             LEFT JOIN categories c ON p.category_id = c.mongo_id
-             $searchCondition";
-$countStmt = $pdo->prepare($countSql);
-$countStmt->execute($searchParams);
-$totalProducts = $countStmt->fetch()['total'];
+// Điều kiện tìm kiếm
+$match = [];
+if ($search) {
+    $regex = new Regex($search, 'i');
+    $match['$or'] = [
+        ['product_name' => $regex],
+        ['description' => $regex]
+        // Không thể tìm category_name trước khi $addFields
+    ];
+}
+
+// Pipeline chung
+$basePipeline = [
+    ['$lookup' => [
+        'from' => 'Category',
+        'localField' => 'category_id',
+        'foreignField' => '_id',
+        'as' => 'Category'
+    ]],
+    ['$unwind' => [
+        'path' => '$Category',
+        'preserveNullAndEmptyArrays' => true
+    ]],
+    ['$lookup' => [
+        'from' => 'Variant',
+        'localField' => '_id',
+        'foreignField' => 'product_id',
+        'as' => 'Variant'
+    ]],
+    ['$lookup' => [
+        'from' => 'ProductImage',
+        'localField' => '_id',
+        'foreignField' => 'product_id',
+        'as' => 'images'
+    ]],
+    ['$addFields' => [
+        'category_name' => '$Category.name',
+        'total_quantity' => ['$sum' => '$Variant.quantity'],
+        'price' => ['$max' => '$Variant.price'],
+        'image_urls' => [
+            '$map' => [
+                'input' => '$images',
+                'as' => 'img',
+                'in' => '$$img.image_url'
+            ]
+        ]
+    ]],
+    ['$project' => [
+        'product_name' => 1,
+        'description' => 1,
+        'category_name' => 1,
+        'total_quantity' => 1,
+        'price' => 1,
+        'image_urls' => 1,
+        'created_date' => 1
+    ]],
+    ['$sort' => ['created_date' => -1]]
+];
+
+// Đếm tổng số sản phẩm
+$countPipeline = [];
+if (!empty($match)) $countPipeline[] = ['$match' => $match];
+$countPipeline = array_merge($countPipeline, $basePipeline);
+$countPipeline[] = ['$count' => 'total'];
+
+$totalResult = $mongo->Product->aggregate($countPipeline)->toArray();
+$totalProducts = $totalResult[0]['total'] ?? 0;
 $totalPages = ceil($totalProducts / $limit);
 
-// Get categories for dropdown
-$categoriesStmt = $pdo->query("SELECT * FROM categories ORDER BY name");
-$categories = $categoriesStmt->fetchAll();
+// Lấy sản phẩm phân trang
+$dataPipeline = [];
+if (!empty($match)) $dataPipeline[] = ['$match' => $match];
+$dataPipeline = array_merge($dataPipeline, $basePipeline);
+$dataPipeline[] = ['$skip' => $skip];
+$dataPipeline[] = ['$limit' => $limit];
 
-// Get base URL for AJAX calls
-$protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+$products = iterator_to_array($mongo->Product->aggregate($dataPipeline));
+
+// Lấy danh sách danh mục
+$categories = iterator_to_array($mongo->Category->find([], ['sort' => ['name' => 1]]));
+
+// Base URL
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on') ? 'https' : 'http';
 $host = $_SERVER['HTTP_HOST'];
-$baseUrl = $protocol . '://' . $host;
+$baseUrl = "$protocol://$host";
+
 ?>
 
 <!DOCTYPE html>
@@ -133,7 +181,7 @@ $baseUrl = $protocol . '://' . $host;
     <tr class="hover:bg-gray-700">
         <td class="px-6 py-4">
             <?php 
-            $firstImage = $product['images'] ? explode(',', $product['images'])[0] : 'placeholder.jpg';
+          $firstImage = isset($product['image_urls'][0]) ? $product['image_urls'][0] : 'placeholder.jpg';
             ?>
             <img class="h-16 w-16 object-cover rounded" src="<?php echo htmlspecialchars($firstImage) ?>" alt="">
         </td>
@@ -143,22 +191,22 @@ $baseUrl = $protocol . '://' . $host;
         <td class="px-6 py-4"><?php echo number_format($product['price'], 0, ',', '.') ?>đ</td>
         <td class="px-6 py-4">
             <div class="flex space-x-2">
-                <button onclick="viewProduct('<?php echo $product['mongo_id'] ?>')" class="text-blue-400 hover:text-blue-300 p-1" title="Xem">
+                <button onclick="viewProduct('<?php echo $product['_id'] ?>')" class="text-blue-400 hover:text-blue-300 p-1" title="Xem">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
                     </svg>
                 </button>
-                <button onclick="editProduct('<?php echo $product['mongo_id'] ?>')" class="text-yellow-400 hover:text-yellow-300 p-1" title="Sửa">
+                <!-- <button onclick="editProduct('<?php echo $product['_id'] ?>')" class="text-yellow-400 hover:text-yellow-300 p-1" title="Sửa">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
                     </svg>
                 </button>
-                <button onclick="deleteProduct('<?php echo $product['mongo_id'] ?>')" class="text-red-400 hover:text-red-300 p-1" title="Xóa">
+                <button onclick="deleteProduct('<?php echo $product['_id'] ?>')" class="text-red-400 hover:text-red-300 p-1" title="Xóa">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                     </svg>
-                </button>
+                </button> -->
             </div>
         </td>
     </tr>
@@ -232,7 +280,7 @@ $baseUrl = $protocol . '://' . $host;
                             class="w-full rounded-xl border border-gray-300 bg-gray-100 px-4 py-2 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-400 outline-none transition">
                         <option value="">-- Chọn danh mục --</option>
                         <?php foreach ($categories as $category): ?>
-                            <option value="<?php echo $category['mongo_id'] ?>">
+                            <option value="<?php echo $category['_id'] ?>">
                                 <?php echo htmlspecialchars($category['name']) ?>
                             </option>
                         <?php endforeach; ?>
@@ -285,7 +333,7 @@ $baseUrl = $protocol . '://' . $host;
                 .then(data => {
                     if (data.success) {
                         document.getElementById('modalTitle').textContent = 'Chỉnh sửa sản phẩm';
-                        document.getElementById('productId').value = data.product.mongo_id;
+                        document.getElementById('productId').value = data.product._id;
                         document.getElementById('productName').value = data.product.product_name;
                         document.getElementById('categoryId').value = data.product.category_id;
                         if (data.variants && data.variants.length > 0) {

@@ -1,6 +1,9 @@
 <?php
-include '../includes/config.php';
-include '../includes/functions.php';
+require_once '../includes/config.php';
+require_once '../includes/functions.php';
+
+use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
 
 header('Content-Type: application/json');
 
@@ -15,10 +18,17 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-    $product_id = $_POST['product_id'] ?? 0;
+    $product_id = $_POST['product_id'] ?? null;
     $image_url_input = trim($_POST['image_url'] ?? '');
 
     if (!$product_id) {
+        echo json_encode(['success' => false, 'message' => 'ID sản phẩm không hợp lệ']);
+        exit;
+    }
+
+    try {
+        $productObjectId = new ObjectId($product_id);
+    } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => 'ID sản phẩm không hợp lệ']);
         exit;
     }
@@ -48,10 +58,12 @@ try {
             $public_url = '/uploads/products/' . $new_name;
 
             if (move_uploaded_file($tmp_name, $target_path)) {
-                $stmt = $pdo->prepare("INSERT INTO product_images (product_id, image_url, modified_date) VALUES (?, ?, NOW())");
-                if ($stmt->execute([$product_id, $public_url])) {
-                    $uploaded[] = $public_url;
-                }
+                $mongoDB->ProductImage->insertOne([
+                    'product_id' => $productObjectId,
+                    'image_url' => $public_url,
+                    'modified_date' => new UTCDateTime()
+                ]);
+                $uploaded[] = $public_url;
             }
         }
     }
@@ -63,18 +75,18 @@ try {
             exit;
         }
 
-        // Kiểm tra đuôi file ảnh
         $url_ext = strtolower(pathinfo(parse_url($image_url_input, PHP_URL_PATH), PATHINFO_EXTENSION));
         if (!in_array($url_ext, $allowed_ext)) {
             echo json_encode(['success' => false, 'message' => 'URL không phải ảnh hợp lệ']);
             exit;
         }
 
-        // Lưu link gốc vào DB
-        $stmt = $pdo->prepare("INSERT INTO product_images (product_id, image_url, modified_date) VALUES (?, ?, NOW())");
-        if ($stmt->execute([$product_id, $image_url_input])) {
-            $uploaded[] = $image_url_input;
-        }
+        $mongoDB->ProductImage->insertOne([
+            'product_id' => $productObjectId,
+            'image_url' => $image_url_input,
+            'modified_date' => new UTCDateTime()
+        ]);
+        $uploaded[] = $image_url_input;
     }
 
     if (count($uploaded) > 0) {
@@ -86,4 +98,3 @@ try {
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'message' => 'Lỗi: ' . $e->getMessage()]);
 }
-?>

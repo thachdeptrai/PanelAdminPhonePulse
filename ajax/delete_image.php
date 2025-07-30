@@ -1,7 +1,8 @@
-
 <?php
-include '../includes/config.php';
-include '../includes/functions.php';
+require_once '../includes/config.php';
+require_once '../includes/functions.php';
+
+use MongoDB\BSON\ObjectId;
 
 header('Content-Type: application/json');
 
@@ -17,34 +18,38 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 try {
     $input = json_decode(file_get_contents('php://input'), true);
-    $image_id = $input['id'] ?? 0;
+    $image_id = $input['id'] ?? '';
 
     if (!$image_id) {
         echo json_encode(['success' => false, 'message' => 'ID hình ảnh không hợp lệ']);
         exit;
     }
 
-    // Get image info
-    $stmt = $pdo->prepare("SELECT image_url FROM product_images WHERE id = ?");
-    $stmt->execute([$image_id]);
-    $image = $stmt->fetch();
+    try {
+        $objectId = new ObjectId($image_id);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'ID không hợp lệ']);
+        exit;
+    }
+
+    // Lấy thông tin hình ảnh từ MongoDB
+    $image = $mongoDB->ProductImage->findOne(['_id' => $objectId]);
 
     if (!$image) {
         echo json_encode(['success' => false, 'message' => 'Hình ảnh không tồn tại']);
         exit;
     }
 
-    // Delete physical file
+    // Xóa file vật lý nếu tồn tại
     $image_path = '../../' . ltrim($image['image_url'], '/');
     if (file_exists($image_path)) {
         unlink($image_path);
     }
 
-    // Delete database record
-    $deleteStmt = $pdo->prepare("DELETE FROM product_images WHERE id = ?");
-    $result = $deleteStmt->execute([$image_id]);
+    // Xóa khỏi MongoDB
+    $deleteResult = $mongoDB->ProductImage->deleteOne(['_id' => $objectId]);
 
-    if ($result) {
+    if ($deleteResult->getDeletedCount() > 0) {
         echo json_encode(['success' => true, 'message' => 'Xóa hình ảnh thành công']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Không thể xóa hình ảnh']);
@@ -52,4 +57,3 @@ try {
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'message' => 'Đã xảy ra lỗi: ' . $e->getMessage()]);
 }
-?>

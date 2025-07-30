@@ -1,16 +1,17 @@
 <?php
-include '../includes/config.php';
-include '../includes/functions.php';
+require_once '../includes/config.php';
+require_once '../includes/functions.php';
+
+use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
 
 header('Content-Type: application/json');
 
-// Kiểm tra quyền admin
 if (!isAdmin()) {
     echo json_encode(['success' => false, 'message' => 'Unauthorized']);
     exit;
 }
 
-// Chỉ nhận POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Phương thức không hợp lệ']);
     exit;
@@ -22,60 +23,78 @@ try {
     $description = trim($_POST['description'] ?? '');
     $image_url   = trim($_POST['image_url'] ?? '');
 
-    // Validate cơ bản
     if (empty($name) || empty($category_id)) {
         echo json_encode(['success' => false, 'message' => 'Vui lòng điền đầy đủ thông tin']);
         exit;
     }
 
-    // Thêm sản phẩm
-    $stmt = $pdo->prepare("INSERT INTO products (product_name, category_id, description, created_date, modified_date) 
-                           VALUES (?, ?, ?, NOW(), NOW())");
-    $stmt->execute([$name, $category_id, $description]);
-    $productId = $pdo->lastInsertId();
+    try {
+        $category_oid = new ObjectId($category_id);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'ID danh mục không hợp lệ']);
+        exit;
+    }
 
-    // === XỬ LÝ ẢNH ===
-    $finalImageUrl = ''; // ảnh cuối cùng sẽ lưu vào DB
+    $createdAt = new UTCDateTime();
+    $productInsert = [
+        'product_name'  => $name,
+        'category_id'   => $category_oid,
+        'description'   => $description,
+        'created_date'  => $createdAt,
+        'modified_date' => $createdAt
+    ];
 
-    // Ưu tiên ảnh upload từ máy
+    $insertResult = $mongoDB->Product->insertOne($productInsert);
+    $productId = $insertResult->getInsertedId();
+
+    // === ẢNH ===
+    $upload_dir = '../uploads/products/';
+    if (!is_dir($upload_dir)) mkdir($upload_dir, 0777, true);
+
+    $finalImageUrl = '';
+    $validExt = ['jpg','jpeg','png','webp','gif'];
+
+    // Ưu tiên ảnh upload
     if (isset($_FILES['image']) && $_FILES['image']['error'] === UPLOAD_ERR_OK) {
-        $ext = pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION);
-        $newName = uniqid('product_') . '.' . $ext;
-        $uploadPath = '../uploads/products/' . $newName;
-
-        if (move_uploaded_file($_FILES['image']['tmp_name'], $uploadPath)) {
-            $finalImageUrl = '/uploads/products/' . $newName;
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Không thể lưu ảnh được upload']);
+        $ext = strtolower(pathinfo($_FILES['image']['name'], PATHINFO_EXTENSION));
+        if (!in_array($ext, $validExt)) {
+            echo json_encode(['success' => false, 'message' => 'Định dạng ảnh không hợp lệ']);
             exit;
         }
 
-    // Nếu không có ảnh upload thì xử lý ảnh từ link
-    } elseif (!empty($image_url) && filter_var($image_url, FILTER_VALIDATE_URL)) {
-        // Validate đuôi ảnh
-        $validExt = ['jpg','jpeg','png','webp','gif'];
-        $urlExt = strtolower(pathinfo(parse_url($image_url, PHP_URL_PATH), PATHINFO_EXTENSION));
+        $newName = uniqid('product_') . '.' . $ext;
+        $targetPath = $upload_dir . $newName;
 
+        if (move_uploaded_file($_FILES['image']['tmp_name'], $targetPath)) {
+            $finalImageUrl = '/uploads/products/' . $newName;
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Không thể lưu ảnh upload']);
+            exit;
+        }
+
+    } elseif (!empty($image_url) && filter_var($image_url, FILTER_VALIDATE_URL)) {
+        $urlExt = strtolower(pathinfo(parse_url($image_url, PHP_URL_PATH), PATHINFO_EXTENSION));
         if (!in_array($urlExt, $validExt)) {
             echo json_encode(['success' => false, 'message' => 'Định dạng ảnh từ URL không hợp lệ']);
             exit;
         }
-
-        // Dùng trực tiếp link (không tải về)
         $finalImageUrl = $image_url;
     }
 
-    // Ghi vào bảng product_images nếu có ảnh
+    // Lưu ảnh vào collection ProductImage
     if (!empty($finalImageUrl)) {
-        $stmt = $pdo->prepare("INSERT INTO product_images (product_id, image_url, created_at, updated_at) 
-                               VALUES (?, ?, NOW(), NOW())");
-        $stmt->execute([$productId, $finalImageUrl]);
+        $mongoDB->ProductImage->insertOne([
+            'product_id'  => $productId,
+            'image_url'   => $finalImageUrl,
+            'created_at'  => $createdAt,
+            'updated_at'  => $createdAt
+        ]);
     }
 
     echo json_encode([
         'success' => true,
         'message' => 'Thêm sản phẩm thành công!',
-        'product_id' => $productId
+        'product_id' => (string)$productId
     ]);
 
 } catch (Exception $e) {
