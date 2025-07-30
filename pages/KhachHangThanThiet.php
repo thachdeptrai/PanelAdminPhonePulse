@@ -1,24 +1,45 @@
 <?php
-// Lấy danh sách tất cả khách hàng thân thiết (panel admin)
-$stmt = $pdo->query("
-  SELECT 
-    u.mongo_id,
-    u.name,
-    u.email,
-    u.avatar_url,
-    u.phone,
-    u.address,
-    COUNT(o.mongo_id) AS total_orders,
-    SUM(o.final_price) AS total_spent
-  FROM users u
-  JOIN orders o ON u.mongo_id = o.user_id
-  WHERE o.shipping_status = 'shipped'
-  GROUP BY u.mongo_id
-  ORDER BY total_spent DESC LIMIT 3
-");
+  use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
+require_once '../includes/config.php';
 
-$users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// Aggregate từ collection orders để lấy tổng đơn và tổng tiền theo user
+$pipeline = [
+  ['$match' => ['shipping_status' => 'shipped']],
+  ['$group' => [
+    '_id' => '$userId',
+    'total_orders' => ['$sum' => 1],
+    'total_spent' => ['$sum' => '$final_price']
+  ]],
+  ['$sort' => ['total_spent' => -1]],
+  ['$limit' => 3]
+];
 
+$cursor = $mongoDB->orders->aggregate($pipeline);
+$users = [];
+
+foreach ($cursor as $doc) {
+  $userId = $doc['_id'] ?? null;
+
+  // Chỉ lấy nếu user_id là ObjectId hợp lệ
+  if (!$userId || !($userId instanceof ObjectId)) continue;
+
+  $user = $mongoDB->users->findOne(['_id' => $userId]);
+  if (!$user) continue;
+
+  $users[] = [
+    'mongo_id'     => (string) $user['_id'],
+    'name'         => $user['name'] ?? 'Không tên',
+    'email'        => $user['email'] ?? '',
+    'avatar_url'   => $user['avatar_url'] ?? 'assets/avatar-default.png',
+    'phone'        => $user['phone'] ?? '',
+    'address'      => $user['address'] ?? '',
+    'total_orders' => $doc['total_orders'],
+    'total_spent'  => $doc['total_spent'],
+  ];
+}
+
+// Hàm tính cấp độ thân thiết
 function getLoyaltyLevel($totalSpent) {
   if ($totalSpent >= 20000000) return '💎 Diamond';
   if ($totalSpent >= 10000000) return '🔶 Platinum';

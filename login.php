@@ -2,31 +2,33 @@
 include 'includes/config.php';
 include 'includes/functions.php';
 
-// Check if user is already logged in
+
 if (isset($_SESSION['user_id'])) {
     header("Location: trang_chu");
     exit();
 }
 
-// Handle login form submission
-if ($_SERVER['REQUEST_METHOD'] == 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = sanitize_input($_POST['email']);
     $password = $_POST['password'];
-    
-    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
-    $stmt->execute([$email]);
-    $user = $stmt->fetch();
-    
-    if ($user && password_verify($password, $user['password']) && $user['role'] == true) {
-        $_SESSION['user_id'] = $user['id'];
+
+    // Chỉ gọi collection từ $mongoDB đã có sẵn
+    $collection = $mongoDB->users;
+
+    $user = $collection->findOne(['email' => $email]);
+
+    if ($user && password_verify($password, $user['password']) && $user['role'] === true) {
+        $_SESSION['user_id'] = (string) $user['_id'];
         $_SESSION['user_email'] = $user['email'];
         $_SESSION['user_role'] = $user['role'];
+
         header("Location: trang_chu");
         exit();
     } else {
         $error = "Invalid credentials or insufficient privileges";
     }
 }
+
 ?>
 <!DOCTYPE html>
 <html lang="en">

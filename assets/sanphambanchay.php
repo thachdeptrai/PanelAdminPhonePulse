@@ -1,134 +1,120 @@
 <?php
+use MongoDB\BSON\UTCDateTime;
+use MongoDB\BSON\ObjectId;
+
+require_once '../includes/config.php';
+
 $startDate = $_GET['start_date'] ?? null;
 $endDate   = $_GET['end_date'] ?? null;
 $quick     = $_GET['quick'] ?? null;
 
+// Xử lý nhanh filter
 if ($quick) {
   $today = date('Y-m-d');
   switch ($quick) {
-    case 'today':
-      $startDate = $endDate = $today;
-      break;
-    case '3days':
-      $startDate = date('Y-m-d', strtotime('-2 days'));
-      $endDate = $today;
-      break;
-    case '7days':
-      $startDate = date('Y-m-d', strtotime('-6 days'));
-      $endDate = $today;
-      break;
-    case '1month':
-      $startDate = date('Y-m-d', strtotime('-1 month'));
-      $endDate = $today;
-      break;
-    case '3months':
-      $startDate = date('Y-m-d', strtotime('-3 months'));
-      $endDate = $today;
-      break;
-    case '1year':
-      $startDate = date('Y-m-d', strtotime('-1 year'));
-      $endDate = $today;
-      break;
-    case 'all':
-      $startDate = $endDate = null;
-      break;
+    case 'today':    $startDate = $endDate = $today; break;
+    case '3days':    $startDate = date('Y-m-d', strtotime('-2 days')); $endDate = $today; break;
+    case '7days':    $startDate = date('Y-m-d', strtotime('-6 days')); $endDate = $today; break;
+    case '1month':   $startDate = date('Y-m-d', strtotime('-1 month')); $endDate = $today; break;
+    case '3months':  $startDate = date('Y-m-d', strtotime('-3 months')); $endDate = $today; break;
+    case '1year':    $startDate = date('Y-m-d', strtotime('-1 year')); $endDate = $today; break;
+    case 'all':      $startDate = $endDate = null; break;
   }
 }
 
-$params = [];
-$where  = "WHERE o.shipping_status = 'shipped'";
-
+// Tạo điều kiện tìm đơn hàng
+$filter = ['shipping_status' => 'shipped'];
 if ($startDate && $endDate) {
-  $where .= " AND DATE(o.created_date) BETWEEN ? AND ?";
-  $params[] = $startDate;
-  $params[] = $endDate;
+  $from = new UTCDateTime((new DateTime($startDate))->getTimestamp() * 1000);
+  $to   = new UTCDateTime((new DateTime($endDate . ' 23:59:59'))->getTimestamp() * 1000);
+  $filter['created_date'] = ['$gte' => $from, '$lte' => $to];
 }
 
-$ordersStmt = $pdo->prepare("SELECT o.items_json, o.final_price, o.created_date FROM orders o $where ORDER BY o.created_date DESC");
-$ordersStmt->execute($params);
-
-$topSelling  = [];
+$ordersCursor = $mongoDB->orders->find($filter, ['sort' => ['created_date' => -1]]);
+$topSelling = [];
 $totalOrders = 0;
 
 $productCache  = [];
 $variantCache  = [];
 $categoryCache = [];
 
-while ($row = $ordersStmt->fetch()) {
-  $items = json_decode($row['items_json'], true);
+foreach ($ordersCursor as $order) {
+  $items = $order['items'] ?? [];
   if (!$items) continue;
-
   $totalOrders++;
 
   foreach ($items as $item) {
-    $variantId = $item['variantId'] ?? null;
-    $quantity  = intval($item['quantity'] ?? 0);
+    $variantId = isset($item['variantId']) ? (string)$item['variantId'] : null;
+    $quantity = intval($item['quantity'] ?? 0);
     if (!$variantId || $quantity <= 0) continue;
 
+    // Tìm variant
     if (!isset($variantCache[$variantId])) {
-      $stmt = $pdo->prepare("SELECT product_id, price as variant_price FROM variants WHERE mongo_id = ? LIMIT 1");
-      $stmt->execute([$variantId]);
-      $variantCache[$variantId] = $stmt->fetch();
+      try {
+        $variant = $mongoDB->Variant->findOne(['_id' => new ObjectId($variantId)]);
+        $variantCache[$variantId] = $variant;
+      } catch (Exception $e) {
+        continue;
+      }
     }
 
     $variant = $variantCache[$variantId];
     if (!$variant) continue;
-    $price = floatval($variant['variant_price']);
-    $productId = $variant['product_id'];
 
+    $price = floatval($variant['price'] ?? 0);
+    $productId = (string)$variant['product_id'];
+
+    // Tìm product
     if (!isset($productCache[$productId])) {
-      $stmt = $pdo->prepare("SELECT product_name, category_id FROM products WHERE mongo_id = ? LIMIT 1");
-      $stmt->execute([$productId]);
-      $productCache[$productId] = $stmt->fetch();
+      $product = $mongoDB->Product->findOne(['_id' => new ObjectId($productId)]);
+      if (!$product) continue;
+
+      // Lấy ảnh mới nhất
+      $imageDoc = $mongoDB->ProductImage->findOne(
+        ['product_id' => new ObjectId($productId)],
+        ['sort' => ['modified_date' => -1]]
+      );
+      $imageUrl = $imageDoc['image_url'] ?? 'default-product.png';
+      $product['image'] = $imageUrl;
+
+      $productCache[$productId] = $product;
     }
 
     $product = $productCache[$productId];
     if (!$product) continue;
 
-    if (!isset($productCache[$productId]['image'])) {
-      $stmt = $pdo->prepare("SELECT image_url FROM product_images WHERE product_id = ? ORDER BY modified_date DESC LIMIT 1");
-      $stmt->execute([$productId]);
-      $imageResult = $stmt->fetch();
-      $product['image'] = $imageResult['image_url'] ?? 'default-product.png';
-      $productCache[$productId]['image'] = $product['image'];
-    } else {
-      $product['image'] = $productCache[$productId]['image'];
-    }
-
-    $categoryId = $product['category_id'];
+    $categoryId = (string)($product['category_id'] ?? '');
     if ($categoryId && !isset($categoryCache[$categoryId])) {
-      $stmt = $pdo->prepare("SELECT name FROM categories WHERE mongo_id = ? LIMIT 1");
-      $stmt->execute([$categoryId]);
-      $result = $stmt->fetch();
-      $categoryCache[$categoryId] = $result ? $result['name'] : 'Chưa phân loại';
+      $cat = $mongoDB->Category->findOne(['_id' => new ObjectId($categoryId)]);
+      $categoryCache[$categoryId] = $cat['name'] ?? 'Chưa phân loại';
     }
 
-    $productKey = $product['product_name'];
+    $productKey = $product['product_name'] ?? 'Không tên';
     if (!isset($topSelling[$productKey])) {
       $topSelling[$productKey] = [
         'name' => $product['product_name'],
-        'category' => $categoryId ? ($categoryCache[$categoryId] ?? 'Chưa phân loại') : 'Chưa phân loại',
+        'category' => $categoryCache[$categoryId] ?? 'Chưa phân loại',
         'image' => $product['image'],
         'total_quantity' => 0,
         'total_revenue' => 0,
         'order_count' => 0,
         'avg_price' => 0,
-        'variant_price' => $variant['variant_price'] ?? 0,
+        'variant_price' => $price,
       ];
     }
 
     $topSelling[$productKey]['total_quantity'] += $quantity;
     $topSelling[$productKey]['total_revenue'] += ($price * $quantity);
     $topSelling[$productKey]['order_count']++;
-    $topSelling[$productKey]['avg_price'] = $topSelling[$productKey]['total_revenue'] / $topSelling[$productKey]['total_quantity'];
+    $topSelling[$productKey]['avg_price'] =
+      $topSelling[$productKey]['total_revenue'] / $topSelling[$productKey]['total_quantity'];
   }
 }
 
-uasort($topSelling, function ($a, $b) {
-  return $b['total_quantity'] <=> $a['total_quantity'];
-});
-
+// Sắp xếp và lấy top 10
+uasort($topSelling, fn($a, $b) => $b['total_quantity'] <=> $a['total_quantity']);
 $topSellingProducts = array_slice($topSelling, 0, 10, true);
+
 ?>
 
 <!-- Top bán chạy + Bộ lọc thời gian gộp chung -->
@@ -146,23 +132,40 @@ $topSellingProducts = array_slice($topSelling, 0, 10, true);
           Dựa trên <strong class="font-bold text-white"><?php echo number_format($totalOrders) ?></strong> đơn hàng đã giao
         </p>
       </div>
+    <!-- Bộ lọc thời gian + Top sản phẩm bán chạy -->
+    <form method="get" class="flex flex-wrap gap-2 items-end">
+      <?php
+      $options = [
+        'today' => 'Hôm nay',
+        '3days' => '3 ngày',
+        '7days' => '7 ngày',
+        '1month' => '1 tháng',
+        '3months' => '3 tháng',
+        '1year' => '1 năm',
+        'all' => 'Tất cả',
+        'custom' => 'Tùy chọn'
+      ];
+      ?>
+      <div class="relative">
+        <select name="quick" onchange="this.form.submit()" class="appearance-none rounded-lg bg-gray-700 text-white border border-indigo-500 px-4 py-2 pr-8 text-sm focus:ring-2 focus:ring-indigo-400">
+          <?php foreach ($options as $key => $label): ?>
+            <option value="<?php echo $key ?>" <?php echo ($quick === $key ? 'selected' : '') ?>><?php echo $label ?></option>
+          <?php endforeach; ?>
+        </select>
+        <div class="pointer-events-none absolute right-2 top-2 text-white">
+          ▼
+        </div>
+      </div>
 
-      <!-- Bộ lọc thời gian gộp chung -->
-      <form method="get" class="grid grid-cols-1 md:grid-cols-3 gap-4 items-end bg-white/20 p-4 rounded-xl shadow-md">
-        <div>
-          <label class="block text-xs font-semibold text-white mb-1">Từ ngày</label>
-          <input type="date" name="start_date" value="<?php echo htmlspecialchars($startDate) ?>" class="w-full rounded-lg border border-indigo-300 px-3 py-1.5 bg-white text-gray-800 focus:ring-2 focus:ring-indigo-500">
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-white mb-1">Đến ngày</label>
-          <input type="date" name="end_date" value="<?php echo htmlspecialchars($endDate) ?>" class="w-full rounded-lg border border-indigo-300 px-3 py-1.5 bg-white text-gray-800 focus:ring-2 focus:ring-indigo-500">
-        </div>
-        <div>
-          <button type="submit" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-2 rounded-lg shadow-lg hover:scale-105 transition-transform duration-300">
-            <i class="fa fa-filter mr-1"></i> Lọc theo ngày
-          </button>
-        </div>
-      </form>
+      <?php if ($quick === 'custom'): ?>
+        <input type="date" name="start_date" value="<?php echo htmlspecialchars($startDate) ?>" class="rounded-lg border border-gray-600 bg-gray-700 text-white px-3 py-2 text-sm">
+        <input type="date" name="end_date" value="<?php echo htmlspecialchars($endDate) ?>" class="rounded-lg border border-gray-600 bg-gray-700 text-white px-3 py-2 text-sm">
+        <button type="submit" class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-4 py-2 rounded-lg text-sm shadow hover:scale-105 transition-all">
+          <i class="fa fa-filter mr-1"></i> Lọc
+        </button>
+      <?php endif; ?>
+    </form>
+
     </div>
   </div>
  

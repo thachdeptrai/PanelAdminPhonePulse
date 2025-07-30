@@ -2,16 +2,22 @@
 require_once __DIR__ . '/config.php';
 session_start();
 
-// Trả true nếu là admin (role === true)
+use MongoDB\BSON\UTCDateTime;
+use MongoDB\BSON\ObjectId;
+
+// Encode HTML an toàn
 function e($string)
 {
     return htmlspecialchars($string, ENT_QUOTES, 'UTF-8');
 }
+
+// Check quyền admin
 function isAdmin()
 {
-    return isset($_SESSION['user_role']) && $_SESSION['user_role'] == true;
+    return isset($_SESSION['user_role']) && $_SESSION['user_role'] === true;
 }
 
+// Làm sạch dữ liệu input
 function sanitize_input($data, $type = 'string')
 {
     if (is_array($data)) {
@@ -29,79 +35,77 @@ function sanitize_input($data, $type = 'string')
 
     return $data;
 }
+
+// ===============================
+// ✅ getDashboardStats dùng MongoDB
+// ===============================
 function getDashboardStats()
 {
-    global $pdo;
+    global $mongoDB;
     $stats = [];
 
-    // ================================
-    // 1. Doanh thu & đơn hàng tháng này
-    // ================================
-    $stmt = $pdo->query("
-        SELECT 
-            COALESCE(SUM(final_price), 0) AS revenue,
-            COUNT(*) AS orders
-        FROM orders
-        WHERE created_date >= DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
-    ");
-    $row = $stmt->fetch();
-    $stats['revenue'] = $row['revenue'];
-    $stats['orders'] = $row['orders'];
+    // Thời gian hiện tại
+    $now = new DateTime();
+    $startOfThisMonth = new UTCDateTime((new DateTime('first day of this month'))->getTimestamp() * 1000);
+    $startOfLastMonth = new UTCDateTime((new DateTime('first day of last month'))->getTimestamp() * 1000);
+    $startOfNextMonth = new UTCDateTime((new DateTime('first day of next month'))->getTimestamp() * 1000);
 
-    // ================================
-    // 2. Doanh thu & đơn hàng tháng trước
-    // ================================
-    $stmt = $pdo->query("
-        SELECT 
-            COALESCE(SUM(final_price), 0) AS revenue,
-            COUNT(*) AS orders
-        FROM orders
-        WHERE created_date >= DATE_SUB(DATE_FORMAT(CURRENT_DATE, '%Y-%m-01'), INTERVAL 1 MONTH)
-          AND created_date < DATE_FORMAT(CURRENT_DATE, '%Y-%m-01')
-    ");
-    $row = $stmt->fetch();
-    $last_revenue = $row['revenue'] ?: 1; // tránh chia 0
-    $last_orders = $row['orders'] ?: 1;
+    // ========== 1. Doanh thu & đơn hàng tháng này ==========
+    $cursor = $mongoDB->orders->aggregate([
+        ['$match' => ['created_date' => ['$gte' => $startOfThisMonth]]],
+        ['$group' => [
+            '_id' => null,
+            'revenue' => ['$sum' => '$final_price'],
+            'orders' => ['$sum' => 1],
+        ]]
+    ]);
+    $row = $cursor->toArray()[0] ?? ['revenue' => 0, 'orders' => 0];
+    $stats['revenue'] = $row['revenue'] ?? 0;
+    $stats['orders'] = $row['orders'] ?? 0;
 
-    // ================================
-    // 3. % thay đổi doanh thu & đơn hàng
-    // ================================
+    // ========== 2. Doanh thu & đơn hàng tháng trước ==========
+    $cursor = $mongoDB->orders->aggregate([
+        ['$match' => [
+            'created_date' => [
+                '$gte' => $startOfLastMonth,
+                '$lt'  => $startOfThisMonth
+            ]
+        ]],
+        ['$group' => [
+            '_id' => null,
+            'revenue' => ['$sum' => '$final_price'],
+            'orders' => ['$sum' => 1],
+        ]]
+    ]);
+    $last = $cursor->toArray()[0] ?? ['revenue' => 0, 'orders' => 0];
+    $last_revenue = $last['revenue'] ?: 1;
+    $last_orders = $last['orders'] ?: 1;
+
+    // ========== 3. % thay đổi doanh thu & đơn hàng ==========
     $stats['rev_change'] = round((($stats['revenue'] - $last_revenue) / $last_revenue) * 100, 2) . '%';
     $stats['order_change'] = round((($stats['orders'] - $last_orders) / $last_orders) * 100, 2) . '%';
 
-    // ================================
-    // 4. Người dùng hoạt động 30 ngày
-    // ================================
-    $stmt = $pdo->query("SELECT COUNT(*) AS users FROM users WHERE last_login >= NOW() - INTERVAL 30 DAY");
-    $row = $stmt->fetch();
-    $stats['users'] = $row['users'] ?? 0;
+    // ========== 4. Người dùng hoạt động 30 ngày gần nhất ==========
+    $now = new DateTime();
+    $ts30DaysAgo = new UTCDateTime((new DateTime('-30 days'))->getTimestamp() * 1000);
+    $ts60DaysAgo = new UTCDateTime((new DateTime('-60 days'))->getTimestamp() * 1000);
 
-    // So sánh với 30 ngày trước đó
-    $stmt = $pdo->query("
-        SELECT
-            COUNT(CASE WHEN last_login >= NOW() - INTERVAL 30 DAY THEN 1 END) AS current_month,
-            COUNT(CASE WHEN last_login >= NOW() - INTERVAL 60 DAY AND last_login < NOW() - INTERVAL 30 DAY THEN 1 END) AS last_month
-        FROM users
-    ");
-    $row = $stmt->fetch();
-    $current = $row['current_month'] ?? 0;
-    $last = $row['last_month'] ?: 1;
-    $stats['user_change'] = round((($current - $last) / $last) * 100, 2) . '%';
+    $activeNow = $mongoDB->users->countDocuments(['modified_date' => ['$gte' => $ts30DaysAgo]]);
+    $activeLast = $mongoDB->users->countDocuments([
+        'last_login' => [
+            '$gte' => $ts60DaysAgo,
+            '$lt' => $ts30DaysAgo
+        ]
+    ]);
+    $activeLast = $activeLast ?: 1;
+    $stats['users'] = $activeNow;
+    $stats['user_change'] = round((($activeNow - $activeLast) / $activeLast) * 100, 2) . '%';
 
-    // ================================
-    // 5. Tổng số sản phẩm
-    // ================================
-    $stmt = $pdo->query("SELECT COUNT(*) AS total FROM products");
-    $row = $stmt->fetch();
-    $stats['product'] = $row['total'] ?? 0;
+    // ========== 5. Tổng số sản phẩm ==========
+    $stats['product'] = $mongoDB->Product->countDocuments([]);
 
-    // ================================
-    // 6. Tổng số danh mục
-    // ================================
-    $stmt = $pdo->query("SELECT COUNT(*) AS total FROM categories");
-    $row = $stmt->fetch();
-    $stats['categories'] = $row['total'] ?? 0;
+    // ========== 6. Tổng số danh mục ==========
+    $stats['categories'] = $mongoDB->Category->countDocuments([]);
 
     return $stats;
 }
-

@@ -1,22 +1,38 @@
 <?php
-$host = 'localhost';
-$db   = 'phonepulse';
-$user = 'root';
-$pass = ''; // nếu có mật khẩu thì điền vào đây
-// $charset = 'utf8mb4';
+require_once __DIR__ . '/../vendor/autoload.php'; // Composer autoload
+use MongoDB\Client;
+// $host = 'localhost';
+// $db   = 'phonepulse';
+// $user = 'root';
+// $pass = ''; // nếu có mật khẩu thì điền vào đây
+// // $charset = 'utf8mb4';
 
-$dsn = "mysql:host=$host;dbname=$db";
-$options = [
-    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION, // báo lỗi
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,       // fetch dạng array
-    PDO::ATTR_EMULATE_PREPARES   => false,                  // dùng prepare thật
-];
+// $dsn = "mysql:host=$host;dbname=$db";
+// $options = [
+//     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION, // báo lỗi
+//     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,       // fetch dạng array
+//     PDO::ATTR_EMULATE_PREPARES   => false,                  // dùng prepare thật
+// ];
 
-try {
-    $pdo = new PDO($dsn, $user, $pass, $options);
-} catch (\PDOException $e) {
-    die('Kết nối database thất bại: ' . $e->getMessage());
-}
+// try {
+//     $pdo = new PDO($dsn, $user, $pass, $options);
+// } catch (\PDOException $e) {
+//     die('Kết nối database thất bại: ' . $e->getMessage());
+// }
+
+// Load env nếu cần
+// require_once __DIR__ . '/dotenv_loader.php';
+
+
+$MONGO_URI = 'mongodb://localhost:27017'; // hoặc dùng getenv('MONGO_URI')
+$MONGO_DB_NAME = 'PhonePulse';         // ✏️ Thay bằng tên DB thật
+
+// Khởi tạo Mongo Client 1 lần duy nhất
+$mongoClient = new Client($MONGO_URI);
+
+// Lấy database 1 lần duy nhất
+$mongoDB = $mongoClient->selectDatabase($MONGO_DB_NAME);
+
 // // Đặt tên site
 // define('SITE_NAME', 'PhonePulse Admin');
 // // Đặt URL của API

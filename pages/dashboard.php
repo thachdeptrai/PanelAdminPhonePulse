@@ -1,88 +1,119 @@
 <?php
-include '../includes/config.php';
-include '../includes/functions.php';
+require_once '../includes/config.php'; // có $mongoDB
+require_once '../includes/functions.php';
+use MongoDB\BSON\ObjectId;
 
+// ✅ Check quyền admin
 if (!isAdmin()) {
     header('Location: dang_nhap');
     exit;
 }
 
-// Check session
-if (!isset($_SESSION['user_id'])) {
-    header("Location: dang_nhap");
-    exit();
+// ✅ Check session
+$user_id_raw = $_SESSION['user_id'] ?? null;
+if (!$user_id_raw) {
+    header('Location: dang_nhap');
+    exit;
 }
 
-// Lấy dữ liệu người dùng
-$user_id = $_SESSION['user_id'];
-$stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-$stmt->execute([$user_id]);
-$user = $stmt->fetch();
+// ✅ Validate ObjectId
+try {
+    $user_id = new ObjectId($user_id_raw);
+} catch (Exception $e) {
+    die("ID phiên không hợp lệ");
+}
 
-// Lấy thống kê dashboard
-$stats = getDashboardStats();
+// ✅ Lấy thông tin user
+$user = $mongoDB->users->findOne(['_id' => $user_id]);
+if (!$user) {
+    die("Không tìm thấy người dùng");
+}
 
-// Lấy đơn hàng gần đây
-$recentOrdersStmt = $pdo->query("SELECT o.mongo_id, o.final_price, o.status, u.name AS customer_name
-                                  FROM orders o
-                                  LEFT JOIN users u ON o.user_id = u.mongo_id
-                                  ORDER BY o.created_date DESC LIMIT 5");
-$recentOrders = $recentOrdersStmt->fetchAll();
+// ✅ Thống kê tổng quan
+$stats = getDashboardStats(); // giả định đã migrate qua Mongo
 
-// Lấy hoạt động gần đây
-$activityStmt = $pdo->query("SELECT u.name AS user_name, o.mongo_id, o.created_date
-                              FROM orders o
-                              LEFT JOIN users u ON o.user_id = u.mongo_id
-                              ORDER BY o.created_date DESC LIMIT 5");
-$activities = $activityStmt->fetchAll();
+// ✅ Đơn hàng gần đây
+$recentOrders = [];
+$cursor = $mongoDB->orders->find([], ['sort' => ['created_date' => -1], 'limit' => 5]);
+foreach ($cursor as $order) {
+    $customer = null;
+    if (!empty($order['userId'])) {
+        try {
+            $customer = $mongoDB->users->findOne(['_id' => new ObjectId($order['userId'])]);
+        } catch (Exception $e) {}
+    }
 
-// // Tính doanh thu theo danh mục từ items_json
-$ordersStmt = $pdo->query("SELECT items_json FROM orders");
+    $recentOrders[] = [
+        'mongo_id' => (string)$order['_id'],
+        'final_price' => $order['final_price'] ?? 0,
+        'status' => $order['status'] ?? '',
+        'customer_name' => $customer['name'] ?? 'Unknown'
+    ];
+}
+
+// ✅ Hoạt động gần đây
+$activities = [];
+$cursor = $mongoDB->orders->find([], ['sort' => ['created_date' => -1], 'limit' => 5]);
+foreach ($cursor as $order) {
+    $customer = null;
+    if (!empty($order['userId'])) {
+        try {
+            $customer = $mongoDB->users->findOne(['_id' => new ObjectId($order['userId'])]);
+        } catch (Exception $e) {}
+    }
+
+    $activities[] = [
+        'mongo_id' => (string)$order['_id'],
+        'created_date' => $order['updatedAt'] ?? '',
+        'user_name' => $customer['name']
+    ];
+}
+
+// ✅ Doanh thu theo danh mục
 $categoryRevenue = [];
- 
-while ($row = $ordersStmt->fetch()) {
-    $items = json_decode($row['items_json'], true);
+$orders = $mongoDB->orders->find();
+
+foreach ($orders as $order) {
+    $items = $order['items'] ?? [];
     foreach ($items as $item) {
         $variantId = $item['variantId'] ?? null;
         $quantity = $item['quantity'] ?? 0;
         if (!$variantId || $quantity <= 0) continue;
 
-        // Lấy variant và product theo mongo_id
-        $variantStmt = $pdo->prepare("SELECT price, product_id FROM variants WHERE mongo_id = ? LIMIT 1");
-        $variantStmt->execute([$variantId]);
-        $variant = $variantStmt->fetch();
+        try {
+            $variant = $mongoDB->Variant->findOne(['_id' => new ObjectId($variantId)]);
+            if (!$variant) continue;
 
-        if ($variant) {
-            $productStmt = $pdo->prepare("SELECT category_id FROM products WHERE mongo_id = ? LIMIT 1");
-            $productStmt->execute([$variant['product_id']]);
-            $product = $productStmt->fetch();
+            $product = $mongoDB->Product->findOne(['_id' => new ObjectId($variant['product_id'])]);
+            if (!$product) continue;
 
-            if ($product) {
-                $catStmt = $pdo->prepare("SELECT name FROM categories WHERE mongo_id = ? LIMIT 1");
-                $catStmt->execute([$product['category_id']]);
-                $category = $catStmt->fetchColumn();
+            $category = $mongoDB->Category->findOne(['_id' => new ObjectId($product['category_id'])]);
+            if (!$category) continue;
 
-                if ($category) {
-                    $categoryRevenue[$category] = ($categoryRevenue[$category] ?? 0) + $variant['price'] * $quantity;
-                }
-            }
+            $catName = $category['name'] ?? 'Khác';
+            $price = $variant['price'] ?? 0;
+
+            $categoryRevenue[$catName] = ($categoryRevenue[$catName] ?? 0) + $price * $quantity;
+        } catch (Exception $e) {
+            continue;
         }
     }
 }
 
-// Xuất ra biến JS cho biểu đồ danh mục
+// ✅ Chuẩn bị dữ liệu cho biểu đồ
 $categoryLabels = json_encode(array_keys($categoryRevenue));
 $categoryValues = json_encode(array_values($categoryRevenue));
 
-// Tổng hợp
+// ✅ Thống kê hiển thị
 $totalRevenue = $stats['revenue'] ?? 0;
-$totalOrders = $stats['orders'] ?? 0;
-$activeUsers = $stats['users'] ?? 0;
+$totalOrders  = $stats['orders'] ?? 0;
+$activeUsers  = $stats['users'] ?? 0;
 $totalProducts = $stats['product'] ?? 0;
 
-$revChange = $stats['rev_change'] ?? '0%';
+$revChange   = $stats['rev_change'] ?? '0%';
 $orderChange = $stats['order_change'] ?? '0%';
-$userChange = $stats['user_change'] ?? '0%';
+$userChange  = $stats['user_change'] ?? '0%';
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -232,9 +263,7 @@ $userChange = $stats['user_change'] ?? '0%';
 </div>
 <?php include '../assets/bieudo.php'; ?>
 <?php include '../assets/sanphambanchay.php'; ?>
-<!-- debug -->
-<!-- <?php include '../ajax/debug.php'; ?> -->
- <?php include 'KhachHangThanThiet.php'; ?>
+<?php include 'KhachHangThanThiet.php'; ?>
 
   <!-- Đơn hàng & Hoạt động gần đây -->
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -392,7 +421,6 @@ async function fetchRevenueData(type = 'month', start = '', end = '') {
 
 // ================= VẼ BIỂU ĐỒ DOANH THU =================
 let revenueChart;
-
 async function initRevenueChart(type = 'month', start = '', end = '') {
   const { labels, values } = await fetchRevenueData(type, start, end);
   const ctx = document.getElementById('revenueChart')?.getContext('2d');
@@ -400,38 +428,51 @@ async function initRevenueChart(type = 'month', start = '', end = '') {
 
   if (revenueChart) revenueChart.destroy();
 
+  // Format labels dạng dd/mm
+  const formattedLabels = labels.map(date => {
+    const d = new Date(date);
+    return d.toLocaleDateString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit'
+    });
+  });
+
   const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-  gradient.addColorStop(0, 'rgba(108, 92, 231, 0.3)');
-  gradient.addColorStop(1, 'rgba(108, 92, 231, 0)');
+  gradient.addColorStop(0, 'rgba(0, 255, 135, 0.25)');
+  gradient.addColorStop(1, 'rgba(0, 255, 135, 0)');
 
   revenueChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels,
+      labels: formattedLabels, // ✅ dùng nhãn đã định dạng
       datasets: [{
-        label: 'Doanh thu (VNĐ)',
+        label: 'Doanh Thu (VND)',
         data: values,
-        borderColor: '#a78bfa',
+        borderColor: '#00FF87',
         backgroundColor: gradient,
         borderWidth: 3,
-        pointBackgroundColor: '#c084fc',
+        pointBackgroundColor: '#00FF87',
         pointBorderColor: '#fff',
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        tension: 0.35,
+        pointRadius: 3,
+        pointHoverRadius: 7,
+        tension: 0.5,
         fill: true
       }]
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
+      animation: {
+        duration: 1200,
+        easing: 'easeInOutCubic'
+      },
       plugins: {
         tooltip: {
           backgroundColor: '#1e293b',
           titleColor: '#fff',
           bodyColor: '#e5e7eb',
-          padding: 10,
-          borderColor: '#6c5ce7',
+          padding: 12,
+          borderColor: '#00FF87',
           borderWidth: 1
         },
         legend: {
@@ -447,9 +488,9 @@ async function initRevenueChart(type = 'month', start = '', end = '') {
           beginAtZero: true,
           ticks: {
             color: '#cbd5e1',
-            callback: v => v.toLocaleString('vi-VN') + 'đ'
+            callback: v => v.toLocaleString('vi-VN') + '₫'
           },
-          grid: { color: 'rgba(255,255,255,0.05)' }
+          grid: { color: 'rgba(255,255,255,0.05)', drawTicks: false }
         },
         x: {
           ticks: { color: '#cbd5e1' },
@@ -460,9 +501,11 @@ async function initRevenueChart(type = 'month', start = '', end = '') {
   });
 }
 
+
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
 </body>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <!-- <script src="../assets/js/dashboard.js"></script> -->
 </html>

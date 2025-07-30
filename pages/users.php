@@ -1,390 +1,395 @@
 <?php
-    require_once '../includes/config.php';
-    require_once '../includes/functions.php';
+require_once '../includes/config.php';
+require_once '../includes/functions.php';
 
-    $pageTitle   = 'Quản lý Users';
-    $message     = '';
-    $messageType = '';
+use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\Regex;
 
-    // Xử lý xóa user
-    if (isset($_GET['action']) && $_GET['action'] === 'delete' && isset($_GET['id'])) {
-        $id   = $_GET['id'];
-        $stmt = $pdo->prepare("DELETE FROM users WHERE mongo_id = ?");
-        $stmt->execute([$id]);
-        $rowCount = $stmt->rowCount();
-
-        if ($rowCount > 0) {
-            $message     = 'Xóa user thành công!';
-            $messageType = 'success';
-        } else {
-            $message     = 'User không tồn tại!';
-            $messageType = 'danger';
-        }
-    }
-
-    // Xử lý thêm user
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_user'])) {
-        $errors = [];
-    
-        if (empty($_POST['name'])) $errors[] = 'Tên không được trống';
-    
-        if (empty($_POST['email']) || !filter_var($_POST['email'], FILTER_VALIDATE_EMAIL)) {
-            $errors[] = 'Email không hợp lệ';
-        }
-    
-        $password = $_POST['password'] ?? '';
-        if (
-            empty($password) || 
-            !(
-                strlen($password) >= 6 &&
-                preg_match('/[A-Z]/', $password) &&
-                preg_match('/[0-9]/', $password) &&
-                preg_match('/[\W_]/', $password)
-            )
-        ) {
-            $errors[] = 'Mật khẩu phải có ít nhất 6 ký tự, 1 ký tự hoa, 1 số và 1 ký tự đặc biệt';
-        }
-    
-        if (empty($_POST['phone']) || !preg_match('/^0\d{9}$/', $_POST['phone'])) {
-            $errors[] = 'Số điện thoại không hợp lệ (phải có 10 chữ số và bắt đầu bằng 0)';
-        }
-    
-        if (empty($errors)) {
-            $stmt = $pdo->prepare("INSERT INTO users (name, email, phone, password, status, created_date)
-                                VALUES (?, ?, ?, ?, ?, NOW())");
-            $success = $stmt->execute([
-                $_POST['name'],
-                $_POST['email'],
-                $_POST['phone'] ?? '',
-                password_hash($password, PASSWORD_DEFAULT),
-                $_POST['status'],
-            ]);
-            
-            if ($success) {
-                $message     = 'Thêm user thành công!';
-                $messageType = 'success';
-            } else {
-                $message     = 'Lỗi khi thêm user!';
-                $messageType = 'danger';
-            }
-        } else {
-            $message     = implode('<br>', $errors);
-            $messageType = 'danger';
-        }
-    }
-    
-
-    // Xử lý cập nhật user
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_user'])) {
-        $errors = [];
-        if (empty($_POST['name'])) {
-            $errors[] = 'Tên không được trống';
-        }
-
-        if (empty($_POST['email']) || ! filter_var($_POST['email'], FILTER_VALIDATE_EMAIL)) {
-            $errors[] = 'Email không hợp lệ';
-        }
-
-        if (empty($errors)) {
-            $params = [
-                $_POST['name'],
-                $_POST['email'],
-                $_POST['phone'] ?? '',
-                $_POST['status'],
-                $_POST['userid'],
-            ];
-
-            $passwordUpdate = '';
-            if (! empty($_POST['password'])) {
-                if (strlen($_POST['password']) >= 6) {
-                    $passwordUpdate = ', password = ?';
-                    array_splice($params, 4, 0, [password_hash($_POST['password'], PASSWORD_DEFAULT)]);
-                } else {
-                    $errors[] = 'Mật khẩu phải có ít nhất 6 ký tự';
-                }
-            }
-
-            if (empty($errors)) {
-                $sql = "UPDATE users SET
-                        name = ?,
-                        email = ?,
-                        phone = ?,
-                        status = ?
-                        $passwordUpdate
-                        WHERE mongo_id = ?";
-
-                $stmt    = $pdo->prepare($sql);
-                $success = $stmt->execute($params);
-
-                if ($success) {
-                    $message     = 'Cập nhật user thành công!';
-                    $messageType = 'success';
-                } else {
-                    $message     = 'Lỗi khi cập nhật user!';
-                    $messageType = 'danger';
-                }
-            }
-        }
-
-        if (! empty($errors)) {
-            $message     = implode('<br>', $errors);
-            $messageType = 'danger';
-        }
-    }
-
-    // View user
-    $viewUser = null;
-    if (isset($_GET['action'], $_GET['id']) && $_GET['action'] === 'view') {
-        $id   = $_GET['id'];
-        $stmt = $pdo->prepare("SELECT * FROM users WHERE mongo_id = ?");
-        $stmt->execute([$id]);
-        $viewUser = $stmt->fetch();
-
-        if (! $viewUser) {
-            $message     = 'User không tồn tại!';
-            $messageType = 'danger';
-        }
-    }
-
-    // Edit user
-    $editUser = null;
-    if (isset($_GET['action'], $_GET['id']) && $_GET['action'] === 'edit') {
-        $id   = $_GET['id'];
-        $stmt = $pdo->prepare("SELECT * FROM users WHERE mongo_id = ?");
-        $stmt->execute([$id]);
-        $editUser = $stmt->fetch();
-
-        if (! $editUser) {
-            $message     = 'User không tồn tại!';
-            $messageType = 'danger';
-        }
-    }
-
-   // Tìm kiếm
-$searchTerm      = isset($_GET['search']) ? trim($_GET['search']) : '';
-$searchCondition = '';
-$searchParams    = [];
-
-if (!empty($searchTerm)) {
-    $searchCondition = "WHERE name LIKE ? OR email LIKE ? OR phone LIKE ?";
-    $searchParams    = ["%$searchTerm%", "%$searchTerm%", "%$searchTerm%"];
+if (!isAdmin()) {
+    header('Location: dang_nhap');
+    exit;
 }
 
-// Phân trang
-$page   = isset($_GET['page']) ? (int) $_GET['page'] : 1;
+$user_id_raw = $_SESSION['user_id'] ?? null;
+if (!$user_id_raw) {
+    header('Location: dang_nhap');
+    exit;
+}
+
+$currentUser = $mongoDB->users->findOne(['_id' => new ObjectId($user_id_raw)]);
+
+// Tìm kiếm & phân trang
+$search = isset($_GET['search']) ? trim($_GET['search']) : '';
+$role   = isset($_GET['role']) ? $_GET['role'] : '';
+$status = isset($_GET['status']) ? $_GET['status'] : '';
+$page   = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $limit  = 10;
-$offset = ($page - 1) * $limit;
+$skip   = ($page - 1) * $limit;
 
-// SQL query (toàn ?)
-$sql = "SELECT SQL_CALC_FOUND_ROWS * FROM users $searchCondition ORDER BY created_date DESC LIMIT ?, ?";
-$stmt = $pdo->prepare($sql);
+// Xây dựng bộ lọc
+$filter = [];
 
-// Bind search + offset/limit
-$searchParams[] = $offset;
-$searchParams[] = $limit;
+if ($search) {
+    $regex = new Regex($search, 'i');
+    $filter['$or'] = [
+        ['name'  => $regex],
+        ['email' => $regex],
+        ['phone' => $regex]
+    ];
+}
 
-$stmt->execute($searchParams);
-$users = $stmt->fetchAll();
+if ($role !== '') {
+    $filter['role'] = $role;
+}
 
-// Tổng số user
-$totalUsers = $pdo->query("SELECT FOUND_ROWS()")->fetchColumn();
+if ($status !== '') {
+    $filter['status'] = ($status === 'active') ? 1 : 0;
+}
+
+$options = [
+    'sort'  => ['created_date' => -1],
+    'limit' => $limit,
+    'skip'  => $skip
+];
+
+$cursor = $mongoDB->users->find($filter, $options);
+$users = iterator_to_array($cursor);
+
+$totalUsers = $mongoDB->users->countDocuments($filter);
 $totalPages = ceil($totalUsers / $limit);
+
+// Thống kê
+$allUsersCursor = $mongoDB->users->find();
+$stats = [
+    'total_users'   => 0,
+    'active_users'  => 0,
+    'inactive_users'=> 0,
+    'today_users'   => 0
+];
+$today = (new DateTime())->format('Y-m-d');
+
+foreach ($allUsersCursor as $user) {
+    $stats['total_users']++;
+    if (!empty($user['status'])) {
+        $stats['active_users']++;
+    } else {
+        $stats['inactive_users']++;
+    }
+    if (!empty($user['created_date'])) {
+        $created = is_object($user['created_date']) ? $user['created_date']->toDateTime()->format('Y-m-d') : date('Y-m-d', strtotime($user['created_date']));
+        if ($created === $today) {
+            $stats['today_users']++;
+        }
+    }
+}
+
+// Base URL
+$protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'];
+$baseUrl = $protocol . '://' . $host;
 
 ?>
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" class="dark">
 <head>
   <meta charset="UTF-8">
+  <title>Quản lý người dùng</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quản lý Users</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="../assets/css/users.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.css">
+    <link rel="stylesheet" href="../assets/css/dashboard.css">
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          animation: {
+            'fade-in': 'fadeIn 0.5s ease-in-out',
+            'slide-up': 'slideUp 0.3s ease-out',
+            'scale-in': 'scaleIn 0.2s ease-out',
+            'bounce-gentle': 'bounceGentle 0.6s ease-out',
+            'shimmer': 'shimmer 2s linear infinite',
+            'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0', transform: 'translateY(20px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' }
+            },
+            slideUp: {
+              '0%': { opacity: '0', transform: 'translateY(30px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' }
+            },
+            scaleIn: {
+              '0%': { opacity: '0', transform: 'scale(0.9)' },
+              '100%': { opacity: '1', transform: 'scale(1)' }
+            },
+            bounceGentle: {
+              '0%, 20%, 50%, 80%, 100%': { transform: 'translateY(0)' },
+              '40%': { transform: 'translateY(-10px)' },
+              '60%': { transform: 'translateY(-5px)' }
+            },
+            shimmer: {
+              '0%': { backgroundPosition: '-200% 0' },
+              '100%': { backgroundPosition: '200% 0' }
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .glass-effect {
+      backdrop-filter: blur(10px);
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .hover-lift {
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .hover-lift:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    }
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+  </style>
 </head>
-<body>
-  
-  <a href="trang_chu" class="btn-back">
-    <i class="fas fa-arrow-left me-2"></i>Trang chủ
-  </a>
+<body >
+  <!-- Background Effects -->
+  <div class="fixed inset-0 overflow-hidden pointer-events-none">
+    <div class="absolute -top-40 -right-40 w-80 h-80 bg-purple-500/20 rounded-full blur-3xl animate-pulse-slow"></div>
+    <div class="absolute -bottom-40 -left-40 w-80 h-80 bg-blue-500/20 rounded-full blur-3xl animate-pulse-slow" style="animation-delay: 1s;"></div>
+  </div>
 
-  <div class="container py-5">
-    <div class="main-container">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <h1 class="h2">
-          <i class="fas fa-users me-3"></i>Quản lý Users
+  <!-- Sidebar -->
+  <?php include '../includes/sidebar.php'; ?>
+
+  <!-- Main Content -->
+  <div class="p-6 sm:ml-64">
+    <div class="max-w-7xl mx-auto animate-fade-in">
+      <!-- Header -->
+      <div class="mb-8">
+        <h1 class="text-4xl font-bold text-white mb-2 bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
+          Quản Lý Người Dùng
         </h1>
-        <button class="btn btn-primary btn-lg" data-bs-toggle="modal" data-bs-target="#addUserModal">
-          <i class="fas fa-plus me-2"></i>Thêm User
-        </button>
+        <p class="text-gray-400">Quản lý và theo dõi tất cả người dùng trong hệ thống</p>
       </div>
 
-      <!-- Alerts -->
-      <?php if ($message): ?>
-      <div class="alert alert-<?php echo $messageType; ?> alert-dismissible fade show" role="alert">
-        <i class="fas fa-<?php echo $messageType === 'success' ? 'check-circle' : 'exclamation-triangle'; ?> me-2"></i>
-        <?php echo $message; ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-      </div>
-      <?php endif; ?>
-
-      <!-- Users Table -->
-      <div class="card">
-        <div class="card-header">
-          <div class="row align-items-center">
-            <div class="col-md-6">
-              <h5 class="mb-0">
-                <i class="fas fa-list me-2"></i>Danh sách Users
-                <span class="badge bg-primary"><?php echo number_format($totalUsers); ?></span>
-              </h5>
+      <!-- Stats Cards -->
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div class="glass-effect rounded-2xl p-6 border border-gray-700/50 hover-lift animate-slide-up">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-gray-400 text-sm">Tổng người dùng</p>
+              <p class="text-2xl font-bold text-white"><?= number_format($stats['total_users']) ?></p>
             </div>
-            <div class="col-md-6">
-              <form class="d-flex" method="GET">
-                <input type="text" class="form-control me-2" placeholder="Tìm kiếm tên, email, phone..."
-                       name="search" value="<?php echo e($searchTerm); ?>">
-                <button class="btn btn-outline-light" type="submit">
-                  <i class="fas fa-search"></i>
-                </button>
-                <?php if ($searchTerm): ?>
-                <a href="?" class="btn btn-outline-secondary ms-2">
-                  <i class="fas fa-times"></i>
-                </a>
-                <?php endif; ?>
-              </form>
+            <div class="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center">
+              <span class="text-white font-bold text-lg">👥</span>
             </div>
+          </div>
+          <div class="mt-4 flex items-center text-blue-400">
+            <span class="text-sm">Tổng số người dùng đã đăng ký</span>
           </div>
         </div>
 
-        <div class="card-body p-0">
-          <?php if (empty($users)): ?>
-          <div class="text-center py-5">
-            <i class="fas fa-user-slash fa-3x mb-3 opacity-50"></i>
-            <h5>Không có dữ liệu</h5>
-            <p class="text-muted">
-              <?php echo $searchTerm ? 'Không tìm thấy user nào với từ khóa "' . e($searchTerm) . '"' : 'Chưa có user nào trong hệ thống'; ?>
-            </p>
+        <div class="glass-effect rounded-2xl p-6 border border-gray-700/50 hover-lift animate-slide-up" style="animation-delay: 0.1s;">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-gray-400 text-sm">Đang hoạt động</p>
+              <p class="text-2xl font-bold text-white"><?= number_format($stats['active_users']) ?></p>
+            </div>
+            <div class="w-12 h-12 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl flex items-center justify-center">
+              <span class="text-white font-bold text-lg">✅</span>
+            </div>
           </div>
-          <?php else: ?>
-          <div class="table-responsive">
-            <table class="table table-hover mb-0">
-              <thead class="text-center">
-                <tr>
-                  <th><i class="fas fa-id-card me-1"></i>ID</th>
-                  <th><i class="fas fa-user me-1"></i>Tên</th>
-                  <th><i class="fas fa-envelope me-1"></i>Email</th>
-                  <th><i class="fas fa-phone me-1"></i>Phone</th>
-                  <th><i class="fas fa-toggle-on me-1"></i>Trạng thái</th>
-                  <th><i class="fas fa-calendar me-1"></i>Ngày tạo</th>
-                  <th><i class="fas fa-cogs me-1"></i>Thao tác</th>
-                </tr>
-              </thead>
-              <tbody class="text-center">
-                <?php foreach ($users as $user): ?>
-                <tr>
-                  <td><strong><?php echo e($user['mongo_id']); ?></strong></td>
-                  <td><?php echo e($user['name']); ?></td>
-                  <td><?php echo e($user['email']); ?></td>
-                  <td><?php echo e($user['phone'] ?: '-'); ?></td>
-                  <td>
-                    <?php if ($user['status']): ?>
-                      <span class="badge bg-success">
-                        <i class="fas fa-check me-1"></i>Hoạt động
-                      </span>
-                    <?php else: ?>
-                      <span class="badge bg-secondary">
-                        <i class="fas fa-pause me-1"></i>Tạm dừng
-                      </span>
+          <div class="mt-4 flex items-center text-green-400">
+            <span class="text-sm">Tài khoản đang hoạt động bình thường</span>
+          </div>
+        </div>
+
+        <div class="glass-effect rounded-2xl p-6 border border-gray-700/50 hover-lift animate-slide-up" style="animation-delay: 0.2s;">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-gray-400 text-sm">Bị khóa</p>
+              <p class="text-2xl font-bold text-white"><?= number_format($stats['inactive_users']) ?></p>
+            </div>
+            <div class="w-12 h-12 bg-gradient-to-r from-red-500 to-pink-500 rounded-xl flex items-center justify-center">
+              <span class="text-white font-bold text-lg">🔒</span>
+            </div>
+          </div>
+          <div class="mt-4 flex items-center text-red-400">
+            <span class="text-sm">Tài khoản đã bị khóa hoặc vô hiệu hóa</span>
+          </div>
+        </div>
+
+        <div class="glass-effect rounded-2xl p-6 border border-gray-700/50 hover-lift animate-slide-up" style="animation-delay: 0.3s;">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-gray-400 text-sm">Mới hôm nay</p>
+              <p class="text-2xl font-bold text-white"><?= number_format($stats['today_users']) ?></p>
+            </div>
+            <div class="w-12 h-12 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-xl flex items-center justify-center">
+              <span class="text-white font-bold text-lg">⭐</span>
+            </div>
+          </div>
+          <div class="mt-4 flex items-center text-yellow-400">
+            <span class="text-sm">Người dùng đăng ký trong ngày hôm nay</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filters & Search -->
+      <div class="glass-effect rounded-2xl p-6 border border-gray-700/50 mb-8 animate-slide-up" style="animation-delay: 0.4s;">
+        <form method="GET" class="flex flex-col lg:flex-row gap-4 items-center justify-between">
+          <div class="flex flex-col md:flex-row gap-4 flex-1">
+            <div class="relative">
+              <input type="text" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Tìm kiếm theo tên, email, số điện thoại..." 
+                class="w-full md:w-80 bg-gray-800/50 border border-gray-600 rounded-xl px-4 py-3 pl-12 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-300">
+              <span class="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400">🔍</span>
+            </div>
+
+            <select name="role" class="bg-gray-800/50 border border-gray-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
+              <option value="">Tất cả vai trò</option>
+              <option value="1" <?= $role == 1 ? 'selected' : '' ?>>Quản trị viên</option>
+              <option value="0" <?= $role == 0 ? 'selected' : '' ?>>Người dùng</option>
+            </select>
+
+            <select name="status" class="bg-gray-800/50 border border-gray-600 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
+              <option value="">Tất cả trạng thái</option>
+              <option value="1" <?= $status ==  1 ? 'selected' : '' ?>>Đang hoạt động</option>
+              <option value="0" <?= $status == 0 ? 'selected' : '' ?>>Bị khóa</option>
+            </select>
+
+            <button type="submit" class="bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white px-6 py-3 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg">
+              Lọc kết quả
+            </button>
+          </div>
+
+          <button type="button" onclick="openAddModal()" class="bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-6 py-3 rounded-xl transition-all duration-300 transform hover:scale-105 hover:shadow-lg">
+            Thêm người dùng
+          </button>
+        </form>
+      </div>
+
+      <!-- Users Table -->
+      <div class="glass-effect rounded-2xl border border-gray-700/50 overflow-hidden animate-slide-up" style="animation-delay: 0.5s;">
+        <div class="overflow-x-auto">
+          <table class="w-full">
+            <thead class="bg-gradient-to-r from-purple-900/50 to-blue-900/50">
+              <tr>
+                <th class="px-6 py-4 text-left text-gray-300 font-semibold">Người dùng</th>
+                <th class="px-6 py-4 text-left text-gray-300 font-semibold">Liên hệ</th>
+                <th class="px-6 py-4 text-left text-gray-300 font-semibold">Vai trò</th>
+                <th class="px-6 py-4 text-left text-gray-300 font-semibold">Trạng thái</th>
+                <th class="px-6 py-4 text-left text-gray-300 font-semibold">Xác thực</th>
+                <th class="px-6 py-4 text-left text-gray-300 font-semibold">Ngày tham gia</th>
+                <th class="px-6 py-4 text-left text-gray-300 font-semibold">Hành động</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-700/50">
+              <?php if (empty($users)): ?>
+              <tr>
+                <td colspan="7" class="px-6 py-8 text-center text-gray-400">
+                  <div class="flex flex-col items-center">
+                    <span class="text-4xl mb-2">📭</span>
+                    <span>Không tìm thấy người dùng nào</span>
+                  </div>
+                </td>
+              </tr>
+              <?php else: ?>
+                <?php foreach ($users as $index => $user): ?>
+                <tr class="hover:bg-white/5 transition-all duration-300 animate-slide-up" style="animation-delay: <?= $index * 0.05 ?>s;">
+                  <td class="px-6 py-4">
+                    <div class="flex items-center">
+                      <img src="<?= htmlspecialchars($user['avatar_url'] ?: 'https://ui-avatars.com/api/?name=' . urlencode($user['name']) . '&background=6366f1&color=ffffff') ?>" 
+                           alt="Avatar" class="w-12 h-12 rounded-full object-cover border-2 border-purple-500/30 mr-4">
+                      <div>
+                        <div class="font-semibold text-white"><?= htmlspecialchars($user['name']) ?></div>
+                        <div class="text-sm text-gray-400">ID: #<?=(string) $user['_id'] ?></div>
+                        <?php if ($user['gender']): ?>
+                        <div class="text-xs text-gray-500"><?= $user['gender'] === 'male' ? '👨' : ($user['gender'] === 'female' ? '👩' : '👤') ?> <?= ucfirst($user['gender']) ?></div>
+                        <?php endif; ?>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="px-6 py-4">
+                    <div class="text-white"><?= htmlspecialchars($user['email']) ?></div>
+                    <?php if ($user['phone']): ?>
+                    <div class="text-sm text-gray-400"><?= htmlspecialchars($user['phone']) ?></div>
+                    <?php endif; ?>
+                    <?php if ($user['address']): ?>
+                    <div class="text-xs text-gray-500 truncate max-w-32"><?= htmlspecialchars($user['address']) ?></div>
                     <?php endif; ?>
                   </td>
-                  <td><?php echo date('d/m/Y', strtotime($user['created_date'])); ?></td>
-                  <td>
-                    <div class="btn-group" role="group">
-                      <a href="?action=view&id=<?php echo $user['mongo_id']; ?>"
-                         class="btn btn-sm btn-outline-primary"
-                         title="Xem chi tiết">
-                        <i class="fas fa-eye"></i>
-                      </a>
-                      <a href="?action=edit&id=<?php echo $user['mongo_id']; ?>"
-                         class="btn btn-sm btn-outline-warning"
-                         title="Chỉnh sửa">
-                        <i class="fas fa-edit"></i>
-                      </a>
-                      <button type="button"
-                              class="btn btn-sm btn-outline-danger"
-                              title="Xóa"
-                              onclick="confirmDelete(<?php echo $user['mongo_id']; ?>, '<?php echo addslashes($user['name']); ?>')">
-                        <i class="fas fa-trash"></i>
+                  <td class="px-6 py-4">
+                    <span class="px-3 py-1 rounded-full text-xs font-medium <?= $user['role'] == 1 ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30' ?>">
+                      <?= $user['role'] == 1 ? 'Quản trị viên' : 'Người dùng' ?>
+                    </span>
+                  </td>
+                  <td class="px-6 py-4">
+                    <span class="px-3 py-1 rounded-full text-xs font-medium <?= $user['status'] == 1 ? 'bg-green-500/20 text-green-300 border border-green-500/30' : 'bg-red-500/20 text-red-300 border border-red-500/30' ?>">
+                      <?= $user['status'] == 1 ? 'Hoạt động' : 'Bị khóa' ?>
+                    </span>
+                  </td>
+                  <td class="px-6 py-4">
+                    <span class="px-2 py-1 rounded-full text-xs font-medium <?= $user['is_verified'] == 1 ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300' ?>">
+                      <?= $user['is_verified'] == 1 ? '✓ Đã xác thực' : '⏳ Chưa xác thực' ?>
+                    </span>
+                  </td>
+                  <td class="px-6 py-4">
+                    <div class="text-gray-400"><?= date('d/m/Y', strtotime($user['created_date'])) ?></div>
+                    <!-- <?php if ($user['last_login']): ?> -->
+                    <!-- <div class="text-xs text-gray-500">Đăng nhập: <?= date('d/m/Y H:i', strtotime($user['last_login'])) ?></div> -->
+                    <!-- <?php endif; ?> -->
+                  </td>
+                  <td class="px-6 py-4">
+                    <div class="flex items-center space-x-2">
+                      <button onclick="editUser('<?= (string)$user['_id'] ?>')" title="Chỉnh sửa"
+                        class="w-9 h-9 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 rounded-lg transition-all duration-300 transform hover:scale-110 flex items-center justify-center">
+                        ✏️
+                      </button>
+                      <button onclick="toggleStatus('<?= (string)$user['_id'] ?>', <?= $user['status'] ?>)" title="<?= $user['status'] == 1 ? 'Khóa tài khoản' : 'Mở khóa tài khoản' ?>"
+                        class="w-9 h-9 <?= $user['status'] == 1 ? 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300' : 'bg-green-500/20 hover:bg-green-500/30 text-green-300' ?> rounded-lg transition-all duration-300 transform hover:scale-110 flex items-center justify-center">
+                        <?= $user['status'] == 1 ? '🔒' : '🔓' ?>
+                      </button>
+                      <button onclick="deleteUser('<?= (string)$user['_id'] ?>')" title="Xóa người dùng"
+                        class="w-9 h-9 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded-lg transition-all duration-300 transform hover:scale-110 flex items-center justify-center">
+                        🗑️
                       </button>
                     </div>
                   </td>
                 </tr>
                 <?php endforeach; ?>
-              </tbody>
-            </table>
-          </div>
-          <?php endif; ?>
+              <?php endif; ?>
+            </tbody>
+          </table>
         </div>
 
-        <!-- Phân trang -->
+        <!-- Pagination -->
         <?php if ($totalPages > 1): ?>
-        <div class="card-footer">
-          <nav aria-label="Phân trang">
-            <ul class="pagination justify-content-center mb-0">
-              <!-- Previous -->
-              <li class="page-item                                   <?php echo $page <= 1 ? 'disabled' : ''; ?>">
-                <a class="page-link" href="?page=<?php echo $page - 1; ?><?php echo $searchTerm ? '&search=' . urlencode($searchTerm) : ''; ?>"
-                   aria-label="Trang trước">
-                  <i class="fas fa-chevron-left"></i>
-                </a>
-              </li>
-
-              <!-- Page numbers -->
-              <?php
-                  $startPage = max(1, $page - 2);
-                  $endPage   = min($totalPages, $page + 2);
-
-              if ($startPage > 1): ?>
-                <li class="page-item">
-                  <a class="page-link" href="?page=1<?php echo $searchTerm ? '&search=' . urlencode($searchTerm) : ''; ?>">1</a>
-                </li>
-                <?php if ($startPage > 2): ?>
-                <li class="page-item disabled"><span class="page-link">...</span></li>
-                <?php endif; ?>
-<?php endif; ?>
-
-              <?php for ($i = $startPage; $i <= $endPage; $i++): ?>
-              <li class="page-item<?php echo $i == $page ? 'active' : ''; ?>">
-                <a class="page-link" href="?page=<?php echo $i; ?><?php echo $searchTerm ? '&search=' . urlencode($searchTerm) : ''; ?>">
-                  <?php echo $i; ?>
-                </a>
-              </li>
-              <?php endfor; ?>
-
-              <?php if ($endPage < $totalPages): ?>
-<?php if ($endPage < $totalPages - 1): ?>
-                <li class="page-item disabled"><span class="page-link">...</span></li>
-                <?php endif; ?>
-                <li class="page-item">
-                  <a class="page-link" href="?page=<?php echo $totalPages; ?><?php echo $searchTerm ? '&search=' . urlencode($searchTerm) : ''; ?>">
-                    <?php echo $totalPages; ?>
-                  </a>
-                </li>
-              <?php endif; ?>
-
-              <!-- Next -->
-              <li class="page-item                                   <?php echo $page >= $totalPages ? 'disabled' : ''; ?>">
-                <a class="page-link" href="?page=<?php echo $page + 1; ?><?php echo $searchTerm ? '&search=' . urlencode($searchTerm) : ''; ?>"
-                   aria-label="Trang sau">
-                  <i class="fas fa-chevron-right"></i>
-                </a>
-              </li>
-            </ul>
-          </nav>
-
-          <div class="text-center mt-3">
-            <small class="text-muted">
-              Hiển thị                           <?php echo($page - 1) * $limit + 1; ?> -<?php echo min($page * $limit, $totalUsers); ?>
-              trong tổng số<?php echo number_format($totalUsers); ?> user
-            </small>
+        <div class="px-6 py-4 border-t border-gray-700/50 flex items-center justify-between">
+          <div class="text-gray-400 text-sm">
+            Hiển thị <?= ($page - 1) * $limit + 1 ?>-<?= min($page * $limit, $totalUsers) ?> trong tổng số <?= number_format($totalUsers) ?> người dùng
+          </div>
+          <div class="flex items-center space-x-2">
+            <?php if ($page > 1): ?>
+            <a href="?<?= http_build_query(array_merge($_GET, ['page' => $page - 1])) ?>" 
+               class="px-4 py-2 bg-gray-800/50 text-gray-400 rounded-lg hover:bg-gray-700/50 transition-colors duration-300">
+              Trước
+            </a>
+            <?php endif; ?>
+            
+            <?php for ($i = max(1, $page - 2); $i <= min($totalPages, $page + 2); $i++): ?>
+            <a href="?<?= http_build_query(array_merge($_GET, ['page' => $i])) ?>" 
+               class="px-4 py-2 <?= $i == $page ? 'bg-purple-500 text-white' : 'bg-gray-800/50 text-gray-400 hover:bg-gray-700/50' ?> rounded-lg transition-colors duration-300">
+              <?= $i ?>
+            </a>
+            <?php endfor; ?>
+            
+            <?php if ($page < $totalPages): ?>
+            <a href="?<?= http_build_query(array_merge($_GET, ['page' => $page + 1])) ?>" 
+               class="px-4 py-2 bg-gray-800/50 text-gray-400 rounded-lg hover:bg-gray-700/50 transition-colors duration-300">
+              Sau
+            </a>
+            <?php endif; ?>
           </div>
         </div>
         <?php endif; ?>
@@ -392,363 +397,508 @@ $totalPages = ceil($totalUsers / $limit);
     </div>
   </div>
 
-  <!-- Add User Modal -->
-  <div class="modal fade" id="addUserModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">
-            <i class="fas fa-user-plus me-2"></i>Thêm User Mới
-          </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <form method="POST" id="addUserForm">
-          <div class="modal-body">
-            <div class="row">
-              <div class="col-md-6 mb-3">
-                <label class="form-label">
-                  <i class="fas fa-user me-1"></i>Tên đầy đủ *
-                </label>
-                <input type="text" class="form-control" name="name" required>
-              </div>
-              <div class="col-md-6 mb-3">
-                <label class="form-label">
-                  <i class="fas fa-envelope me-1"></i>Email *
-                </label>
-                <input type="email" class="form-control" name="email" required>
-              </div>
-            </div>
-            <div class="row">
-              <div class="col-md-6 mb-3">
-                <label class="form-label">
-                  <i class="fas fa-phone me-1"></i>Số điện thoại
-                </label>
-                <input type="text" class="form-control" name="phone">
-              </div>
-              <div class="col-md-6 mb-3">
-                <label class="form-label">
-                  <i class="fas fa-toggle-on me-1"></i>Trạng thái *
-                </label>
-                <select class="form-select" name="status" required>
-                  <option value="1">Hoạt động</option>
-                  <option value="0">Tạm dừng</option>
-                </select>
-              </div>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">
-                <i class="fas fa-lock me-1"></i>Mật khẩu *
-              </label>
-              <input type="password" class="form-control" name="password" required minlength="6"
-                     placeholder="Tối thiểu 6 ký tự">
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-              <i class="fas fa-times me-1"></i>Hủy
-            </button>
-            <button type="submit" name="add_user" class="btn btn-primary">
-              <i class="fas fa-save me-1"></i>Thêm User
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Edit User Modal -->
-  <?php if ($editUser): ?>
-  <div class="modal fade show" id="editUserModal" tabindex="-1" style="display: block;" aria-modal="true">
-    <div class="modal-dialog modal-lg">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">
-            <i class="fas fa-user-edit me-2"></i>Chỉnh sửa User
-          </h5>
-          <a href="?" class="btn-close"></a>
-        </div>
-        <form method="POST" id="editUserForm">
-          <input type="hidden" name="userid" value="<?php echo e($editUser['mongo_id']); ?>">
-          <div class="modal-body">
-            <div class="row">
-              <div class="col-md-6 mb-3">
-                <label class="form-label">
-                  <i class="fas fa-user me-1"></i>Tên đầy đủ *
-                </label>
-                <input type="text" class="form-control" name="name" value="<?php echo e($editUser['name']); ?>" required>
-              </div>
-              <div class="col-md-6 mb-3">
-                <label class="form-label">
-                  <i class="fas fa-envelope me-1"></i>Email *
-                </label>
-                <input type="email" class="form-control" name="email" value="<?php echo e($editUser['email']); ?>" required>
-              </div>
-            </div>
-            <div class="row">
-              <div class="col-md-6 mb-3">
-                <label class="form-label">
-                  <i class="fas fa-phone me-1"></i>Số điện thoại
-                </label>
-                <input type="text" class="form-control" name="phone" value="<?php echo e($editUser['phone']); ?>">
-              </div>
-              <div class="col-md-6 mb-3">
-                <label class="form-label">
-                  <i class="fas fa-toggle-on me-1"></i>Trạng thái *
-                </label>
-                <select class="form-select" name="status" required>
-                  <option value="1"                                    <?php echo $editUser['status'] ? 'selected' : ''; ?>>Hoạt động</option>
-                  <option value="0"                                    <?php echo ! $editUser['status'] ? 'selected' : ''; ?>>Tạm dừng</option>
-                </select>
-              </div>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">
-                <i class="fas fa-lock me-1"></i>Mật khẩu mới
-              </label>
-              <input type="password" class="form-control" name="password"
-                     placeholder="Để trống nếu không muốn đổi mật khẩu">
-              <div class="form-text text-light">
-                <i class="fas fa-info-circle me-1"></i>Chỉ nhập mật khẩu mới nếu muốn thay đổi
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <a href="?" class="btn btn-secondary">
-              <i class="fas fa-times me-1"></i>Hủy
-            </a>
-            <button type="submit" name="update_user" class="btn btn-primary">
-              <i class="fas fa-save me-1"></i>Cập nhật User
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-  <div class="modal-backdrop fade show"></div>
-  <?php endif; ?>
-
-  <!-- View User Modal -->
-  <?php if ($viewUser): ?>
-  <div class="modal fade show" id="viewUserModal" tabindex="-1" style="display: block;" aria-modal="true">
-    <div class="modal-dialog modal-lg">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">
-            <i class="fas fa-user me-2"></i>Chi tiết User
-          </h5>
-          <a href="?" class="btn-close"></a>
-        </div>
-        <div class="modal-body">
-          <div class="row">
-            <div class="col-md-6 mb-4">
-              <div class="card h-100">
-                <div class="card-body">
-                  <h6 class="card-title">
-                    <i class="fas fa-id-card me-2 text-primary"></i>Thông tin cơ bản
-                  </h6>
-                  <hr>
-                  <p><strong>ID:</strong>                                          <?php echo e($viewUser['mongo_id']); ?></p>
-                  <p><strong>Tên:</strong>                                            <?php echo e($viewUser['name']); ?></p>
-                  <p><strong>Email:</strong>                                             <?php echo e($viewUser['email']); ?></p>
-                  <p><strong>Phone:</strong>                                             <?php echo e($viewUser['phone'] ?: 'Chưa có'); ?></p>
-                </div>
-              </div>
-            </div>
-            <div class="col-md-6 mb-4">
-              <div class="card h-100">
-                <div class="card-body">
-                  <h6 class="card-title">
-                    <i class="fas fa-info-circle me-2 text-info"></i>Thông tin khác
-                  </h6>
-                  <hr>
-                  <p>
-                    <strong>Trạng thái:</strong>
-                    <?php if ($viewUser['status']): ?>
-                      <span class="badge bg-success">
-                        <i class="fas fa-check me-1"></i>Hoạt động
-                      </span>
-                    <?php else: ?>
-                      <span class="badge bg-secondary">
-                        <i class="fas fa-pause me-1"></i>Tạm dừng
-                      </span>
-                    <?php endif; ?>
-                  </p>
-                  <p><strong>Ngày tạo:</strong>                                                   <?php echo date('d/m/Y H:i:s', strtotime($viewUser['created_date'])); ?></p>
-                  <p><strong>Ngày cập nhật:</strong>                                                          <?php echo $viewUser['modified_date'] ? date('d/m/Y H:i:s', strtotime($viewUser['modified_date'])) : 'Chưa cập nhật'; ?></p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="row">
-            <div class="col-12">
-              <div class="card">
-                <div class="card-body">
-                  <h6 class="card-title">
-                    <i class="fas fa-chart-line me-2 text-success"></i>Thống kê hoạt động
-                  </h6>
-                  <hr>
-                  <div class="row text-center">
-                    <div class="col-md-3">
-                      <div class="p-3">
-                        <i class="fas fa-sign-in-alt fa-2x text-primary mb-2"></i>
-                        <h5>--</h5>
-                        <small>Lần đăng nhập cuối</small>
-                      </div>
-                    </div>
-                    <div class="col-md-3">
-                      <div class="p-3">
-                        <i class="fas fa-calendar-check fa-2x text-success mb-2"></i>
-                        <h5>--</h5>
-                        <small>Tổng đăng nhập</small>
-                      </div>
-                    </div>
-                    <div class="col-md-3">
-                      <div class="p-3">
-                        <i class="fas fa-clock fa-2x text-warning mb-2"></i>
-                        <h5>--</h5>
-                        <small>Thời gian online</small>
-                      </div>
-                    </div>
-                    <div class="col-md-3">
-                      <div class="p-3">
-                        <i class="fas fa-star fa-2x text-info mb-2"></i>
-                        <h5>--</h5>
-                        <small>Điểm hoạt động</small>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <a href="?" class="btn btn-secondary">
-            <i class="fas fa-times me-1"></i>Đóng
-          </a>
-          <a href="?action=edit&id=<?php echo $viewUser['mongo_id']; ?>" class="btn btn-primary">
-            <i class="fas fa-edit me-1"></i>Chỉnh sửa
-          </a>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div class="modal-backdrop fade show"></div>
-  <?php endif; ?>
-
-  <!-- Delete Confirmation Modal -->
-  <div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">
-            <i class="fas fa-exclamation-triangle text-danger me-2"></i>Xác nhận xóa
-          </h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <div class="text-center">
-            <i class="fas fa-user-times fa-3x text-danger mb-3"></i>
-            <h5>Bạn có chắc chắn muốn xóa user này?</h5>
-            <p class="text-muted mb-4">
-              User: <strong id="deleteUserName"></strong>
-            </p>
-            <div class="alert alert-warning">
-              <i class="fas fa-exclamation-triangle me-2"></i>
-              <strong>Cảnh báo:</strong> Hành động này không thể hoàn tác!
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-            <i class="fas fa-times me-1"></i>Hủy
+  <!-- User Modal -->
+  <div id="userModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+    <div class="glass-effect rounded-2xl border border-gray-700/50 w-full max-w-md transform transition-all duration-300 scale-95 opacity-0" id="modalContent">
+      <div class="p-6">
+        <div class="flex items-center justify-between mb-6">
+          <h3 id="modalTitle" class="text-xl font-bold text-white">Thêm người dùng mới</h3>
+          <button onclick="closeModal()" class="text-gray-400 hover:text-white transition-colors duration-300 text-2xl w-8 h-8 flex items-center justify-center">
+            ×
           </button>
-          <a href="#" id="confirmDeleteBtn" class="btn btn-danger">
-            <i class="fas fa-trash me-1"></i>Xóa User
-          </a>
         </div>
+
+        <form id="userForm" class="space-y-4">
+          <input type="hidden" id="mongo_id" name="mongo_id">
+          
+          <div>
+            <label class="block text-gray-300 text-sm font-medium mb-2">Họ và tên *</label>
+            <input type="text" id="name" name="name" required
+              class="w-full bg-gray-800/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
+          </div>
+
+          <div>
+            <label class="block text-gray-300 text-sm font-medium mb-2">Email *</label>
+            <input type="email" id="email" name="email" required
+              class="w-full bg-gray-800/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
+          </div>
+
+          <div>
+            <label class="block text-gray-300 text-sm font-medium mb-2">Số điện thoại</label>
+            <input type="tel" id="phone" name="phone"
+              class="w-full bg-gray-800/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
+          </div>
+
+          <div>
+            <label class="block text-gray-300 text-sm font-medium mb-2">Địa chỉ</label>
+            <input type="text" id="address" name="address"
+              class="w-full bg-gray-800/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-gray-300 text-sm font-medium mb-2">Giới tính</label>
+              <select id="gender" name="gender"
+                class="w-full bg-gray-800/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
+                <option value="">Chọn giới tính</option>
+                <option value="male">Nam</option>
+                <option value="female">Nữ</option>
+                <option value="other">Khác</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-gray-300 text-sm font-medium mb-2">Vai trò *</label>
+              <select id="role" name="role" required
+                class="w-full bg-gray-800/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
+                <option value="0">Người dùng</option>
+                <option value="1">Quản trị viên</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label class="block text-gray-300 text-sm font-medium mb-2">Trạng thái</label>
+              <select id="status" name="status" required
+                class="w-full bg-gray-800/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
+                <option value="1">Hoạt động</option>
+                <option value="0">Bị khóa</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-gray-300 text-sm font-medium mb-2">Xác thực</label>
+              <select id="isVerified" name="is_verified"
+                class="w-full bg-gray-800/50 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all duration-300">
+                <option value="0">Chưa xác thực</option>
+                <option value="1">Đã xác thực</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex gap-3 pt-4">
+            <button type="button" onclick="closeModal()" 
+              class="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-3 rounded-xl transition-all duration-300">
+              Hủy bỏ
+            </button>
+            <button type="submit"
+              class="flex-1 bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 text-white py-3 rounded-xl transition-all duration-300 transform hover:scale-105">
+              Lưu thay đổi
+              </button>
+          </div>
+        </form>
       </div>
     </div>
   </div>
 
-  <!-- Scripts -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-  <script src="../assets/js/users.js"></script>
-  <style>
-    @media (max-width: 768px) {
-      .main-container {
-        margin: 10px;
-        padding: 20px;
+  <!-- Toast Notifications -->
+  <div id="toastContainer" class="fixed top-4 right-4 z-50 space-y-2"></div>
+
+  <script>
+    function showModal() {
+  const modal = document.getElementById('userModal');
+  const content = document.getElementById('modalContent');
+
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+
+  setTimeout(() => {
+    content.classList.remove('scale-95', 'opacity-0');
+    content.classList.add('scale-100', 'opacity-100');
+  }, 10);
+}
+function closeModal() {
+  const modal = document.getElementById('userModal');
+  const content = document.getElementById('modalContent');
+
+  content.classList.add('scale-95', 'opacity-0');
+  content.classList.remove('scale-100', 'opacity-100');
+
+  setTimeout(() => {
+    modal.classList.add('hidden');
+    modal.classList.remove('flex');
+  }, 300);
+}
+
+   let currentUserId = null;
+
+// Mở modal thêm user
+function openAddModal() {
+  currentUserId = null;
+  document.getElementById('modalTitle').textContent = 'Thêm người dùng mới';
+  document.getElementById('userForm').reset();
+  document.getElementById('mongo_id').value = '';
+  showModal();
+}
+
+// Mở modal sửa user
+function editUser(userId) {
+  currentUserId = userId;
+
+  fetch(`api/get_user.php?id=${userId}`)
+    .then(res => res.json())
+    .then(data => {
+      if (!data.success || !data.user) {
+        showToast('Không thể tải dữ liệu người dùng', 'error');
+        return;
       }
 
-      .btn-back {
-        position: relative;
-        top: auto;
-        left: auto;
-        margin-bottom: 20px;
-        display: block;
-        width: fit-content;
+      const user = data.user;
+      document.getElementById('modalTitle').textContent = 'Chỉnh sửa người dùng';
+      document.getElementById('mongo_id').value = user._id || '';
+      document.getElementById('name').value = user.name || '';
+      document.getElementById('email').value = user.email || '';
+      document.getElementById('phone').value = user.phone || '';
+      document.getElementById('address').value = user.address || '';
+      document.getElementById('gender').value = user.gender || '';
+      document.getElementById('role').value = user.role ?? '0';
+      document.getElementById('status').value = user.status ?? '1';
+      document.getElementById('isVerified').value = user.is_verified ?? '0';
+      showModal();
+    })
+    .catch(err => {
+      console.error(err);
+      showToast('Lỗi khi tải thông tin người dùng', 'error');
+    });
+}
+
+// Gửi form (thêm hoặc sửa)
+document.getElementById('userForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  if (!validateForm()) return;
+
+  const formData = new FormData(this);
+  const isEdit = !!currentUserId;
+  const url = isEdit ? 'api/update_user.php' : 'api/add_user.php';
+
+  const submitBtn = this.querySelector('button[type="submit"]');
+  const originalText = submitBtn.textContent;
+  submitBtn.textContent = 'Đang xử lý...';
+  submitBtn.disabled = true;
+
+  fetch(url, {
+    method: 'POST',
+    body: formData
+  })
+    .then(async res => {
+      const text = await res.text();
+      try {
+        const json = JSON.parse(text);
+        return json;
+      } catch (err) {
+        throw new Error('Invalid JSON: ' + text);
       }
-
-      .table-responsive {
-        font-size: 0.85rem;
+    })
+    .then(data => {
+      if (data.success) {
+        showToast(isEdit ? 'Cập nhật thành công!' : 'Thêm người dùng thành công!', 'success');
+        closeModal();
+        setTimeout(() => location.reload(), 1000);
+      } else {
+        showToast(data.message || 'Lỗi xử lý dữ liệu', 'error');
       }
+    })
+    .catch(err => {
+      console.error(err);
+      showToast(err.message || 'Lỗi không xác định', 'error');
+    })
+    .finally(() => {
+      submitBtn.textContent = originalText;
+      submitBtn.disabled = false;
+    });
+});
 
-      .btn-group .btn {
-        padding: 0.25rem 0.4rem;
+// Xóa user
+function deleteUser(userId) {
+  if (!confirm('Bạn có chắc muốn xóa người dùng này không?')) return;
+
+  fetch('api/delete_user.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId })
+  })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        showToast('Xóa người dùng thành công!', 'success');
+        setTimeout(() => location.reload(), 1000);
+      } else {
+        showToast(data.message || 'Lỗi khi xóa', 'error');
       }
+    })
+    .catch(err => {
+      console.error(err);
+      showToast('Lỗi khi xử lý xóa người dùng', 'error');
+    });
+}
+function toggleStatus(userId, currentStatus) {
+  console.log('Toggle called with:', userId, currentStatus); // 👈 THÊM DÒNG NÀY
 
-      .modal-dialog {
-        margin: 10px;
+  const newStatus = currentStatus === 1 ? 0 : 1;
+  const label = newStatus === 1 ? 'mở khóa' : 'khóa';
+
+  if (!confirm(`Bạn có chắc muốn ${label} tài khoản này không?`)) return;
+
+  fetch('api/toggle_status.php', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      status: newStatus
+    })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.success) {
+      showToast(`Đã ${label} tài khoản!`, 'success');
+      setTimeout(() => location.reload(), 1000);
+    } else {
+      showToast(data.message || 'Lỗi toggle trạng thái', 'error');
+    }
+  })
+  .catch(err => {
+    console.error(err);
+    showToast('Lỗi khi thay đổi trạng thái', 'error');
+  });
+}
+
+
+    // Toast notification system
+    function showToast(message, type = 'info') {
+      const toastContainer = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      
+      const bgColor = {
+        success: 'bg-green-500',
+        error: 'bg-red-500',
+        info: 'bg-blue-500',
+        warning: 'bg-yellow-500'
+      }[type] || 'bg-gray-500';
+      
+      const icon = {
+        success: '✅',
+        error: '❌',
+        info: 'ℹ️',
+        warning: '⚠️'
+      }[type] || 'ℹ️';
+      
+      toast.className = `${bgColor} text-white px-6 py-4 rounded-xl shadow-lg transform transition-all duration-300 translate-x-full opacity-0 flex items-center space-x-3 min-w-80`;
+      toast.innerHTML = `
+        <span class="text-lg">${icon}</span>
+        <span class="flex-1">${message}</span>
+        <button onclick="this.parentElement.remove()" class="text-white/80 hover:text-white text-xl leading-none">×</button>
+      `;
+      
+      toastContainer.appendChild(toast);
+      
+      // Show toast
+      setTimeout(() => {
+        toast.classList.remove('translate-x-full', 'opacity-0');
+        toast.classList.add('translate-x-0', 'opacity-100');
+      }, 100);
+      
+      // Auto remove after 5 seconds
+      setTimeout(() => {
+        toast.classList.add('translate-x-full', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 5000);
+    }
+
+    // Close modal when clicking outside
+    document.getElementById('userModal').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeModal();
       }
+    });
 
-      .pagination {
-        font-size: 0.85rem;
+    // Close modal with Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') {
+        closeModal();
+      }
+    });
+
+    // Auto-hide alerts after 5 seconds
+    document.addEventListener('DOMContentLoaded', function() {
+      const alerts = document.querySelectorAll('.alert');
+      alerts.forEach(alert => {
+        setTimeout(() => {
+          alert.style.opacity = '0';
+          setTimeout(() => alert.remove(), 300);
+        }, 5000);
+      });
+    });
+
+    // Enhanced form validation
+    function validateForm() {
+      const form = document.getElementById('userForm');
+      const inputs = form.querySelectorAll('input[required], select[required]');
+      let isValid = true;
+      
+      inputs.forEach(input => {
+        if (!input.value.trim()) {
+          input.classList.add('border-red-500');
+          isValid = false;
+        } else {
+          input.classList.remove('border-red-500');
+        }
+      });
+      
+      // Email validation
+      const email = document.getElementById('email');
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (email.value && !emailRegex.test(email.value)) {
+        email.classList.add('border-red-500');
+        showToast('Định dạng email không hợp lệ', 'error');
+        isValid = false;
+      }
+      
+      // Phone validation
+      const phone = document.getElementById('phone');
+      const phoneRegex = /^[0-9+\-\s()]+$/;
+      if (phone.value && !phoneRegex.test(phone.value)) {
+        phone.classList.add('border-red-500');
+        showToast('Định dạng số điện thoại không hợp lệ', 'error');
+        isValid = false;
+      }
+      
+      return isValid;
+    }
+
+    // Add real-time validation
+    document.addEventListener('DOMContentLoaded', function() {
+      const inputs = document.querySelectorAll('#userForm input, #userForm select');
+      inputs.forEach(input => {
+        input.addEventListener('blur', function() {
+          if (this.hasAttribute('required') && !this.value.trim()) {
+            this.classList.add('border-red-500');
+          } else {
+            this.classList.remove('border-red-500');
+          }
+        });
+        
+        input.addEventListener('input', function() {
+          this.classList.remove('border-red-500');
+        });
+      });
+    });
+
+    // Advanced search functionality
+    function handleSearch() {
+      const searchInput = document.querySelector('input[name="search"]');
+      const form = searchInput.closest('form');
+      
+      searchInput.addEventListener('input', debounce(function() {
+        if (this.value.length >= 3 || this.value.length === 0) {
+          form.submit();
+        }
+      }, 500));
+    }
+
+    // Debounce function for search
+    function debounce(func, wait) {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    }
+
+    // Initialize search functionality
+    document.addEventListener('DOMContentLoaded', handleSearch);
+
+    // Export data functionality
+    function exportUsers() {
+      const params = new URLSearchParams(window.location.search);
+      window.open(`api/export_users.php?${params.toString()}`, '_blank');
+    }
+
+    // Bulk actions
+    function selectAllUsers() {
+      const checkboxes = document.querySelectorAll('.user-checkbox');
+      const selectAll = document.querySelector('#selectAll');
+      
+      checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll.checked;
+      });
+      
+      updateBulkActionsVisibility();
+    }
+
+    function updateBulkActionsVisibility() {
+      const checkedBoxes = document.querySelectorAll('.user-checkbox:checked');
+      const bulkActions = document.querySelector('#bulkActions');
+      
+      if (checkedBoxes.length > 0) {
+        bulkActions.classList.remove('hidden');
+      } else {
+        bulkActions.classList.add('hidden');
       }
     }
 
-    /* Loading animation */
-    @keyframes pulse {
-      0% { opacity: 1; }
-      50% { opacity: 0.5; }
-      100% { opacity: 1; }
+    // Print functionality
+    function printUserList() {
+      window.print();
     }
 
-    .loading {
-      animation: pulse 1.5s infinite;
-    }
+    // Initialize tooltips
+    document.addEventListener('DOMContentLoaded', function() {
+      const tooltipElements = document.querySelectorAll('[title]');
+      
+      tooltipElements.forEach(element => {
+        element.addEventListener('mouseenter', function() {
+          const tooltip = document.createElement('div');
+          tooltip.className = 'absolute bg-gray-900 text-white text-xs rounded px-2 py-1 z-50 pointer-events-none';
+          tooltip.textContent = this.getAttribute('title');
+          tooltip.style.top = (this.offsetTop - 30) + 'px';
+          tooltip.style.left = this.offsetLeft + 'px';
+          
+          this.removeAttribute('title');
+          this.appendChild(tooltip);
+          
+          this.addEventListener('mouseleave', function() {
+            tooltip.remove();
+            this.setAttribute('title', tooltip.textContent);
+          });
+        });
+      });
+    });
 
-    /* Transition effects */
-    .card, .btn, .badge, .alert {
-      transition: all 0.3s ease;
-    }
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+      // Ctrl/Cmd + K for search focus
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        document.querySelector('input[name="search"]').focus();
+      }
+      
+      // Ctrl/Cmd + N for new user
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        openAddModal();
+      }
+    });
+  </script>
 
-    .table tbody tr {
-      transition: background-color 0.2s ease;
+  <!-- Print Styles -->
+  <style media="print">
+    .no-print, .sidebar, .filters, .actions {
+      display: none !important;
     }
-
-    .table-active {
-      background-color: rgba(255, 255, 255, 0.1) !important;
+    
+    body {
+      background: white !important;
+      color: black !important;
     }
-
-    /* Custom scrollbar */
-    ::-webkit-scrollbar {
-      width: 8px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb {
-      background: rgba(255, 255, 255, 0.3);
-      border-radius: 4px;
-    }
-
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(255, 255, 255, 0.5);
+    
+    .glass-effect {
+      background: white !important;
+      backdrop-filter: none !important;
     }
   </style>
 </body>
