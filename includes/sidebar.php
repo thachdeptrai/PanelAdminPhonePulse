@@ -93,11 +93,11 @@
                     </a>
                 </li>
                 <li>
-                    <a href="admin-tools" class="sidebar-item flex items-center px-4 py-3 rounded-lg">
+                    <a href="chatroom" class="sidebar-item flex items-center px-4 py-3 rounded-lg">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-3">
                             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
                         </svg>
-                        Công cụ Admin
+                        Hỗ trợ khách hàng 
                     </a>
                 </li>
             </ul>

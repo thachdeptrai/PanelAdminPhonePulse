@@ -55,13 +55,14 @@ RewriteRule ^ajax/get_variant$ ajax/get_variant.php [L,QSA]
 # update product 
 RewriteRule ^ajax/update_product/([^/]+)$ ajax/update_product.php?id=$1 [L,QSA]
 RewriteRule ^ajax/update_product$ ajax/update_product.php [L,QSA]
-# oders
 # setting
 RewriteRule ^settings$ pages/settings.php [L]
 # profile
 # voucher
 RewriteRule ^voucher$ pages/voucher.php [L]
 RewriteRule ^profile$ pages/profile.php [L]
+#chatroom
+RewriteRule ^chatroom$ pages/chatRoom.php [L]
 ErrorDocument 404 /404.php
 
 # Nếu không match thì tự tìm file.php
