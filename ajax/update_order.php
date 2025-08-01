@@ -3,6 +3,9 @@ include '../includes/config.php';
 include '../includes/functions.php';
 include '../includes/delivery_ai.php';
 
+use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
+
 if (!isAdmin()) {
     header('Location: dang_nhap');
     exit;
@@ -13,22 +16,24 @@ $status = $_POST['status'] ?? '';
 $shipping = $_POST['shipping_status'] ?? '';
 $payment = $_POST['payment_status'] ?? '';
 
-if (!$orderId) {
-    echo "Thiếu ID đơn hàng";
+if (!$orderId || !preg_match('/^[a-f\d]{24}$/i', $orderId)) {
+    echo "❌ Thiếu hoặc sai định dạng ID đơn hàng.";
     exit;
 }
 
-// Lấy trạng thái hiện tại từ DB
-$stmt = $pdo->prepare("SELECT status, shipping_status, payment_status, shipping_address FROM orders WHERE mongo_id = ?");
-$stmt->execute([$orderId]);
-$order = $stmt->fetch();
+$objectId = new ObjectId($orderId);
+
+// 🔍 Lấy đơn hàng hiện tại
+$order = $mongoDB->orders->findOne(['_id' => $objectId], [
+    'projection' => ['status' => 1, 'shipping_status' => 1, 'payment_status' => 1, 'shipping_address' => 1]
+]);
 
 if (!$order) {
     echo "❌ Không tìm thấy đơn hàng.";
     exit;
 }
 
-// 🧠 Logic chặn rollback trạng thái (không cho quay ngược)
+// 🧠 Flow hạn chế rollback
 $allowedStatusFlow = [
     'pending'   => ['confirmed', 'cancelled'],
     'confirmed' => [],
@@ -57,54 +62,57 @@ if (!isValidFlow($order['status'], $status, $allowedStatusFlow)) {
 }
 
 if (!isValidFlow($order['shipping_status'], $shipping, $allowedShippingFlow)) {
-    header("Location: /order_detail?id=$orderId&type=error&msg=" . urlencode("Không được quay ngược trạng thái đơn hàng."));
+    header("Location: /order_detail?id=$orderId&type=error&msg=" . urlencode("Không được quay ngược trạng thái giao hàng."));
     exit;
 }
 
 if (!isValidFlow($order['payment_status'], $payment, $allowedPaymentFlow)) {
-    header("Location: /order_detail?id=$orderId&type=error&msg=" . urlencode("Không được quay ngược trạng thái đơn hàng."));
+    header("Location: /order_detail?id=$orderId&type=error&msg=" . urlencode("Không được quay ngược trạng thái thanh toán."));
     exit;
 }
 
-// Xử lý update AI ngày giao hàng nếu cần
-$now = date('Y-m-d H:i:s');
-$extraSql = "";
-$extraParams = [];
+// 🧠 Xử lý AI nếu chuyển trạng thái sang shipping
+$updateFields = [
+    'status' => $status,
+    'shipping_status' => $shipping,
+    'payment_status' => $payment,
+    'updatedAt' => new UTCDateTime()
+];
 
 if ($shipping === 'shipping') {
     $estimatedDays = estimateShippingDaysAI($order['shipping_address']);
-    $shippingDate = $now;
-    $deliveredDate = date('Y-m-d H:i:s', strtotime("+$estimatedDays days"));
-    $extraSql = ", shipping_date = ?, delivered_date = ?";
-    $extraParams = [$shippingDate, $deliveredDate];
-
+    $updateFields['shipping_date'] = new UTCDateTime();
+    $updateFields['delivered_date'] = new UTCDateTime(strtotime("+$estimatedDays days") * 1000);
 } elseif ($shipping === 'shipped') {
-    $deliveredDate = $now;
-    $extraSql = ", delivered_date = ?";
-    $extraParams = [$deliveredDate];
-
+    $updateFields['delivered_date'] = new UTCDateTime();
 } elseif ($shipping === 'not_shipped') {
-    $extraSql = ", shipping_date = NULL, delivered_date = NULL";
+    $updateFields['shipping_date'] = null;
+    $updateFields['delivered_date'] = null;
 }
 
-// Gộp SQL và Params
-$sql = "UPDATE orders SET 
-            status = ?, 
-            shipping_status = ?, 
-            payment_status = ?, 
-            modified_date = NOW()
-            $extraSql 
-        WHERE mongo_id = ?";
-$params = array_merge([$status, $shipping, $payment], $extraParams, [$orderId]);
+// ✅ Cập nhật MongoDB
+$updateResult = $mongoDB->orders->updateOne(
+    ['_id' => $objectId],
+    ['$set' => $updateFields]
+);
 
-// Thực thi
-$stmt = $pdo->prepare($sql);
-$success = $stmt->execute($params);
-
-// Kết quả
-if ($success) {
+if ($updateResult->getModifiedCount() > 0) {
+    $mongoDB->logs->insertOne([
+        'admin_id' => new ObjectId($_SESSION['admin_id']), // ✅ đúng tên biến session
+        'action'   => 'UPDATE',
+        'module'   => 'ORDER',
+        'time'     => new UTCDateTime(),
+        'details'  => json_encode(value: [
+            'order_id'  => (string)$orderId, // ✅ chuẩn hơn nếu đang làm với đơn hàng
+            'message'   => 'Cập nhật đơn hàng thành công',
+            'timestamp' => date('Y-m-d H:i:s')
+        ]),
+        'created_at' => new UTCDateTime(),
+        'updated_at' => new UTCDateTime()
+    ]);
     header("Location: /order_detail?id=$orderId&msg=Cập Nhật Thành Công");
     exit;
 } else {
-    header("Location: /order_detail?id=$orderId&type=error&msg=" . urlencode("Cập nhật thất bại."));
+    header("Location: /order_detail?id=$orderId&type=error&msg=" . urlencode("Không có thay đổi hoặc cập nhật thất bại."));
 }
+?>

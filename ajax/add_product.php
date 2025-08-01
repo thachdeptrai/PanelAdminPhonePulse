@@ -91,11 +91,11 @@ try {
         ]);
     }
 
-    echo json_encode([
-        'success' => true,
-        'message' => 'Thêm sản phẩm thành công!',
-        'product_id' => (string)$productId
-    ]);
+echo json_encode([
+    'success'     => true,
+    'message'     => 'Thêm sản phẩm thành công!',
+    'product_id'  => (string)$productId
+]);
 
 } catch (Exception $e) {
     echo json_encode([

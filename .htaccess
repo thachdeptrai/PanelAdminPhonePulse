@@ -21,7 +21,9 @@ RewriteRule ^product_detail/([^/]+)$ /pages/product_detail.php?id=$1 [L,QSA]
 # update_order
 RewriteRule ^ajax/update_order/([^/]+)$ ajax/update_order.php?id=$1 [L,QSA]
 RewriteRule ^ajax/update_order$ ajax/update_order.php [L,QSA]
-
+#orders_trash
+RewriteRule ^orders_trash$ pages/orders_trash.php [L]
+RewriteRule ^orders_trash/([^/]+)$ pages/orders_trash.php?id=$1 [L,QSA]
 # ajax/update_variant.php
 RewriteRule ^ajax/update_variant/([^/]+)$ ajax/update_variant.php?id=$1 [L,QSA]
 RewriteRule ^ajax/update_variant$ ajax/update_variant.php [L,QSA]
@@ -44,6 +46,9 @@ RewriteRule ^ajax/delete_product$ ajax/delete_product.php [L,QSA]
 #delete image 
 RewriteRule ^ajax/delete_image/([^/]+)$ ajax/delete_image.php?id=$1 [L,QSA]
 RewriteRule ^ajax/delete_image$ ajax/delete_image.php [L,QSA]
+#delete_order
+RewriteRule ^ajax/delete_order/([^/]+)$ ajax/delete_order.php?id=$1 [L,QSA]
+RewriteRule ^ajax/delete_order$ ajax/delete_order.php [L,QSA]
 # get variant 
 RewriteRule ^ajax/get_variant/([^/]+)$ ajax/get_variant.php?id=$1 [L,QSA]
 RewriteRule ^ajax/get_variant$ ajax/get_variant.php [L,QSA]
@@ -51,6 +56,12 @@ RewriteRule ^ajax/get_variant$ ajax/get_variant.php [L,QSA]
 RewriteRule ^ajax/update_product/([^/]+)$ ajax/update_product.php?id=$1 [L,QSA]
 RewriteRule ^ajax/update_product$ ajax/update_product.php [L,QSA]
 # oders
+# setting
+RewriteRule ^settings$ pages/settings.php [L]
+# profile
+# voucher
+RewriteRule ^voucher$ pages/voucher.php [L]
+RewriteRule ^profile$ pages/profile.php [L]
 ErrorDocument 404 /404.php
 
 # Nếu không match thì tự tìm file.php

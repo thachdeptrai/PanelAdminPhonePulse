@@ -10,6 +10,9 @@ function e($string)
 {
     return htmlspecialchars($string, ENT_QUOTES, 'UTF-8');
 }
+function isValidMongoId($id) {
+    return preg_match('/^[a-f\d]{24}$/i', $id);
+}
 
 // Check quyền admin
 function isAdmin()

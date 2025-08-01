@@ -50,8 +50,7 @@ $images = $mongoDB->ProductImage->find([
 ]);
 $images = iterator_to_array($images);
 
-// Get variants with color and size info
-$variants = $mongoDB->Variant->aggregate([
+$variantsCursor = $mongoDB->Variant->aggregate([
     ['$match' => ['product_id' => new ObjectId($product_id)]],
     ['$lookup' => [
         'from' => 'Color',
@@ -59,16 +58,16 @@ $variants = $mongoDB->Variant->aggregate([
         'foreignField' => '_id',
         'as' => 'color'
     ]],
+    ['$unwind' => ['path' => '$color', 'preserveNullAndEmptyArrays' => true]],
     ['$lookup' => [
         'from' => 'Size',
         'localField' => 'size_id',
         'foreignField' => '_id',
         'as' => 'size'
     ]],
-    ['$unwind' => ['path' => '$color', 'preserveNullAndEmptyArrays' => true]],
     ['$unwind' => ['path' => '$size', 'preserveNullAndEmptyArrays' => true]],
     ['$project' => [
-        'id' => 1,  
+        '_id' => 1,
         'product_id' => 1,
         'color_id' => 1,
         'size_id' => 1,
@@ -78,9 +77,26 @@ $variants = $mongoDB->Variant->aggregate([
         'size_name' => '$size.size_name',
         'storage' => '$size.storage'
     ]],
-    ['$sort' => ['color_name' => 1, 'size_name' => 1, 'quantity' => 1, 'price' => 1]]
+    ['$sort' => ['color_name' => 1, 'size_name' => 1]]
 ]);
-$variants = iterator_to_array($variants);
+
+$variants = iterator_to_array($variantsCursor);
+
+// ✅ ép kiểu ObjectId thành string để dùng JS cho chắc ăn
+$variants = array_map(function ($v) {
+    return [
+        '_id' => (string)$v['_id'],
+        'product_id' => (string)$v['product_id'],
+        'color_id' => isset($v['color_id']) ? (string)$v['color_id'] : '',
+        'size_id' => isset($v['size_id']) ? (string)$v['size_id'] : '',
+        'color_name' => $v['color_name'] ?? '',
+        'size_name' => $v['size_name'] ?? '',
+        'storage' => $v['storage'] ?? '',
+        'quantity' => $v['quantity'] ?? 0,
+        'price' => $v['price'] ?? 0,
+    ];
+}, $variants);
+
 
 // Get all colors
 $colors = $mongoDB->Color->find([], ['sort' => ['color_name' => 1]]);
@@ -553,7 +569,7 @@ $categories = iterator_to_array($categories);
                         class="w-full bg-gray-800 text-white border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary transition">
                     <option value="">Chọn màu</option>
                     <?php foreach ($colors as $color): ?>
-                        <option value="<?php echo $color['_id'] ?>">
+                        <option value="<?php echo (string) $color['_id'] ?>">
                             <?php echo htmlspecialchars($color['color_name']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -567,7 +583,7 @@ $categories = iterator_to_array($categories);
                         class="w-full bg-gray-800 text-white border border-gray-600 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary transition">
                     <option value="">Chọn kích thước</option>
                     <?php foreach ($sizes as $size): ?>
-                        <option value="<?php echo $size['_id'] ?>">
+                        <option value="<?php echo (string)$size['_id'] ?>">
                             <?php echo htmlspecialchars($size['size_name']) ?> -<?php echo htmlspecialchars($size['storage']) ?>
                         </option>
                     <?php endforeach; ?>
@@ -730,25 +746,23 @@ $categories = iterator_to_array($categories);
 
             const formData = new FormData(this);
 
-            fetch('/ajax/update_variant', {
+            fetch('/ajax/update_variant.php', {
                 method: 'POST',
                 body: formData
             })
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    alert('Cập nhật biến thể thành công!');
-                    location.reload();
+                    alert(data.message);       // hoặc toast, hoặc console.log
+                    location.reload();         // 🧠 Đây là dòng bạn cần thêm
                 } else {
-                    alert('Lỗi: ' + data.message);
+                    alert(data.message);
                 }
             })
-            .catch(async error => {
-    const raw = await error?.response?.text?.();
-    console.error('LỖI KHI FETCH:', error);
-    console.log('Nội dung phản hồi:', raw);
-    alert('Có lỗi xảy ra khi gửi request!');
-});
+            .catch(error => {
+                console.error('Lỗi khi cập nhật:', error);
+                alert('Đã xảy ra lỗi khi gửi yêu cầu');
+            });
         });
 
         // Delete functions
@@ -827,22 +841,25 @@ $categories = iterator_to_array($categories);
             }
         }
 
-        // Edit variant function
         function editVariant(variantId) {
-            // Find the variant data from the current variants
-            const variants =                                                                                     <?php echo json_encode($variants); ?>;
-            const variant = variants.find(v => v.id == variantId);
+        const variants = <?php echo json_encode($variants); ?>;
+        const variant = variants.find(v => v.id == variantId || v._id == variantId || (v._id && v._id.$oid == variantId));
 
-            if (variant) {
-                document.getElementById('editVariantId').value = variantId;
-                document.getElementById('editColorId').value = variant.color_id;
-                document.getElementById('editSizeId').value = variant.size_id;
-                document.getElementById('editPrice').value = variant.price;
-                document.getElementById('editQuantity').value = variant.quantity;
+        console.log(variant); // In toàn bộ object để debug
 
-                openEditVariantModal();
-            }
+        if (variant) {
+            console.log("🧪 Gán color_id:", variant.color_id);
+        console.log("🧪 Gán size_id:", variant.size_id);
+            document.getElementById('editVariantId').value = variantId;
+            document.getElementById('editColorId').value = variant.color_id;
+            document.getElementById('editSizeId').value = variant.size_id;
+            document.getElementById('editPrice').value = variant.price;
+            document.getElementById('editQuantity').value = variant.quantity;
+
+            openEditVariantModal();
         }
+    }
+
 
         // Close modals when clicking outside
         document.addEventListener('click', function(e) {

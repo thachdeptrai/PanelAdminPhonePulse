@@ -7,7 +7,8 @@
                         <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
                     </svg>
                 </div>
-                <span class="font-semibold">Phonepulse</span>
+                <span class="font-semibold"><?= $settings['site_name'] ?? 'null' ?></span>
+
             </div>
             <button class="text-gray-400 md:hidden">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -24,7 +25,7 @@
                 </div>
                 <div>
                     <div class="font-medium"><?php echo htmlspecialchars($user['name']) ?></div>
-                    <div class="text-xs text-gray-400"><?php echo $user['role'] === 1 ? 'Administrator' : 'Users' ?></div>
+                    <div class="text-xs text-gray-400"><?php echo $user['role'] === true ? 'Administrator' : 'Users' ?></div>
                 </div>
             </div>
         </div>
@@ -72,6 +73,17 @@
                     </a>
                 </li>
                 <li>
+                    <a href="voucher" class="sidebar-item flex items-center px-4 py-3 rounded-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-3">
+                    <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2Z"></path>
+                    <path d="M13 5v2"></path>
+                    <path d="M13 17v2"></path>
+                    <path d="M13 11v2"></path>
+                </svg>
+                        Quản lý voucher
+                    </a>
+                </li>
+                <li>
                     <a href="settings" class="sidebar-item flex items-center px-4 py-3 rounded-lg">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-3">
                             <circle cx="12" cy="12" r="3"></circle>
@@ -80,7 +92,6 @@
                         Settings
                     </a>
                 </li>
-                <?php if ($user['role'] == 1): ?>
                 <li>
                     <a href="admin-tools" class="sidebar-item flex items-center px-4 py-3 rounded-lg">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-3">
@@ -89,7 +100,6 @@
                         Công cụ Admin
                     </a>
                 </li>
-                <?php endif; ?>
             </ul>
         </nav>
 

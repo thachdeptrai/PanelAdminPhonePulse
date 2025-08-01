@@ -3,6 +3,7 @@ require_once '../includes/config.php';
 require_once '../includes/functions.php';
 
 use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
 
 if (!isAdmin()) {
     header('Location: dang_nhap');
@@ -15,7 +16,6 @@ if (!$id) {
     exit;
 }
 
-// Validate ObjectId
 try {
     $objectId = new ObjectId($id);
 } catch (Exception $e) {
@@ -23,12 +23,19 @@ try {
     exit;
 }
 
-// Xóa đơn hàng
-$deleteResult = $mongoDB->orders->deleteOne(['_id' => $objectId]);
+// ✅ Cập nhật is_deleted thay vì xoá thật
+$updateResult = $mongoDB->orders->updateOne(
+    ['_id' => $objectId],
+    ['$set' => [
+        'is_deleted' => true,
+        'deleted_at' => new UTCDateTime()
+    ]]
+);
 
-if ($deleteResult->getDeletedCount() > 0) {
-    header("Location: orders.php?msg=deleted");
+// Sau khi update thành công
+if ($updateResult->getModifiedCount() > 0) {
+    header("Location: ../orders?msg=trashed");
     exit;
 } else {
-    echo "Xóa thất bại.";
+    echo "Chuyển vào thùng rác thất bại.";
 }

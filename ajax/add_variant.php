@@ -49,19 +49,6 @@ try {
         echo json_encode(['success' => false, 'message' => 'Biến thể này đã tồn tại']);
         exit;
     }
-
-    // Thêm biến thể
-    $now = new UTCDateTime();
-    $insert = $mongoDB->Variant->insertOne([
-        'product_id'    => $product_oid,
-        'color_id'      => $color_oid,
-        'size_id'       => $size_oid,
-        'quantity'      => $quantity,
-        'price'         => $price,
-        'created_date'  => $now,
-        'modified_date' => $now
-    ]);
-
     echo json_encode(['success' => true, 'message' => 'Thêm biến thể thành công']);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'message' => 'Đã xảy ra lỗi: ' . $e->getMessage()]);

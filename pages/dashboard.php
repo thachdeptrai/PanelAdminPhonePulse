@@ -2,6 +2,7 @@
 require_once '../includes/config.php'; // có $mongoDB
 require_once '../includes/functions.php';
 use MongoDB\BSON\ObjectId;
+$settings = $mongoDB->settings->findOne([]) ?? ['theme_color' => '#0ea5e9'];
 
 // ✅ Check quyền admin
 if (!isAdmin()) {
@@ -120,7 +121,8 @@ $userChange  = $stats['user_change'] ?? '0%';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard | Phonepulse Admin</title>
+    <title><?= htmlspecialchars($settings['meta_title'] ?? 'Admin Dashboard') ?></title>
+
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.css">
     <link rel="stylesheet" href="../assets/css/dashboard.css">
@@ -318,9 +320,13 @@ $userChange  = $stats['user_change'] ?? '0%';
       </div>
     </div>
   </div>
+  <br>
+  <?php include '../includes/footer.php'; ?>
 
 </main>
+
     </div>
+    
 <script>
   const categoryLabels = <?= $categoryLabels ?>;
 const categoryValues = <?= $categoryValues ?>;

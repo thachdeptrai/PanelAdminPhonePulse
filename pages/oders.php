@@ -2,121 +2,154 @@
 include '../includes/config.php';
 include '../includes/functions.php';
 
+use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\Regex;
+use MongoDB\BSON\UTCDateTime;
+
 if (!isAdmin()) {
     header('Location: dang_nhap');
     exit;
 }
-
-// Get filter parameters
-$search = isset($_GET['search']) ? trim($_GET['search']) : '';
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
-$payment_method_filter = isset($_GET['payment_method']) ? $_GET['payment_method'] : '';
-$shipping_status_filter = isset($_GET['shipping_status']) ? $_GET['shipping_status'] : '';
-$date_filter = isset($_GET['date_filter']) ? $_GET['date_filter'] : '';
-$date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
-$date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
+// CHỈ để update user_id về ObjectId nếu đang là string
+$orders = $mongoDB->orders->find(['user_id' => ['$type' => 'string']]);
+foreach ($orders as $order) {
+    try {
+        $mongoDB->orders->updateOne(
+            ['_id' => $order['_id']],
+            ['$set' => ['userId' => new MongoDB\BSON\ObjectId($order['userId'])]]
+        );
+        e("✅ Updated order " . $order['_id'] . "<br>");
+    } catch (Exception $e) {
+        e( "❌ Failed order " . $order['_id'] . ": " . $e->getMessage() . "<br>");
+    }
+}
+$search = $_GET['search'] ?? '';
+$status_filter = $_GET['status'] ?? '';
+$payment_method_filter = $_GET['payment_method'] ?? '';
+$shipping_status_filter = $_GET['shipping_status'] ?? '';
+$date_filter = $_GET['date_filter'] ?? '';
+$date_from = $_GET['date_from'] ?? '';
+$date_to = $_GET['date_to'] ?? '';
 $price_from = isset($_GET['price_from']) ? (float)$_GET['price_from'] : 0;
 $price_to = isset($_GET['price_to']) ? (float)$_GET['price_to'] : 0;
 
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $limit = 10;
-$offset = ($page - 1) * $limit;
+$skip = ($page - 1) * $limit;
 
-// Build WHERE conditions
-$conditions = [];
-$params = [];
+$match = [];
+$match['is_deleted'] = ['$ne' => true];
 
-// Search condition
 if ($search) {
-    $conditions[] = "(o.mongo_id LIKE ? OR u.name LIKE ? OR u.email LIKE ? OR u.phone LIKE ?)";
-    $params = array_merge($params, ["%$search%", "%$search%", "%$search%", "%$search%"]);
+    $regex = new Regex($search, 'i');
+    if (ObjectId::isValid($search)) {
+        $match['$or'][] = ['_id' => new ObjectId($search)];
+    }
+    $match['$or'][] = ['user.name' => $regex];
+    $match['$or'][] = ['user.email' => $regex];
+    $match['$or'][] = ['user.phone' => $regex];
 }
 
-// Status filter
-if ($status_filter) {
-    $conditions[] = "o.status = ?";
-    $params[] = $status_filter;
+if ($status_filter !== '') {
+    $match['status'] = $status_filter;
 }
 
-// Payment method filter
-if ($payment_method_filter) {
-    $conditions[] = "o.payment_method = ?";
-    $params[] = $payment_method_filter;
+if ($payment_method_filter !== '') {
+    $match['payment_method'] = $payment_method_filter;
 }
 
-// Shipping status filter
-if ($shipping_status_filter) {
-    $conditions[] = "o.shipping_status = ?";
-    $params[] = $shipping_status_filter;
+if ($shipping_status_filter !== '') {
+    $match['shipping_status'] = $shipping_status_filter;
 }
 
-// Date filter
 if ($date_filter || ($date_from && $date_to)) {
+    $fromDate = null;
+    $toDate = null;
     switch ($date_filter) {
         case 'today':
-            $conditions[] = "DATE(o.created_date) = CURDATE()";
+            $fromDate = strtotime('today') * 1000;
+            $toDate = strtotime('tomorrow') * 1000;
             break;
         case 'yesterday':
-            $conditions[] = "DATE(o.created_date) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)";
+            $fromDate = strtotime('yesterday') * 1000;
+            $toDate = strtotime('today') * 1000;
             break;
         case '7days':
-            $conditions[] = "o.created_date >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)";
+            $fromDate = strtotime('-7 days') * 1000;
+            $toDate = strtotime('now') * 1000;
             break;
         case 'this_month':
-            $conditions[] = "YEAR(o.created_date) = YEAR(CURDATE()) AND MONTH(o.created_date) = MONTH(CURDATE())";
+            $fromDate = strtotime(date('Y-m-01')) * 1000;
+            $toDate = strtotime(date('Y-m-t 23:59:59')) * 1000;
             break;
         case 'custom':
             if ($date_from && $date_to) {
-                $conditions[] = "DATE(o.created_date) BETWEEN ? AND ?";
-                $params[] = $date_from;
-                $params[] = $date_to;
+                $fromDate = strtotime($date_from) * 1000;
+                $toDate = strtotime($date_to . ' 23:59:59') * 1000;
             }
             break;
     }
+
+    if ($fromDate && $toDate) {
+        $match['created_date'] = [
+            '$gte' => new UTCDateTime($fromDate),
+            '$lte' => new UTCDateTime($toDate),
+        ];
+    }
 }
 
-// Price range filter
-if ($price_from > 0) {
-    $conditions[] = "o.final_price >= ?";
-    $params[] = $price_from;
+if ($price_from > 0 || $price_to > 0) {
+    $priceCond = [];
+    if ($price_from > 0) $priceCond['$gte'] = $price_from;
+    if ($price_to > 0) $priceCond['$lte'] = $price_to;
+    $match['final_price'] = $priceCond;
 }
-if ($price_to > 0) {
-    $conditions[] = "o.final_price <= ?";
-    $params[] = $price_to;
+$pipeline = [
+    ['$lookup' => [
+        'from' => 'users',
+        'localField' => 'userId',
+        'foreignField' => '_id',
+        'as' => 'user'
+    ]],
+    ['$unwind' => ['path' => '$user', 'preserveNullAndEmptyArrays' => true]],
+];
+
+if (!empty($match)) {
+    $pipeline[] = ['$match' => $match];
 }
 
-// Combine conditions
-$whereSql = !empty($conditions) ? "WHERE " . implode(" AND ", $conditions) : "";
+$pipeline[] = ['$sort' => ['created_date' => -1]];
+$pipeline[] = ['$skip' => $skip];
+$pipeline[] = ['$limit' => $limit];
 
-// Main query
-$sql = "SELECT o.*, u.name, u.email, u.phone 
-        FROM orders o
-        LEFT JOIN users u ON o.user_id = u.mongo_id
-        $whereSql
-        ORDER BY o.created_date DESC
-        LIMIT $limit OFFSET $offset";
 
-$stmt = $pdo->prepare($sql);
-$stmt->execute($params);
-$orders = $stmt->fetchAll();
+$ordersCursor = $mongoDB->orders->aggregate($pipeline);
+$orders = iterator_to_array($ordersCursor);
+$countPipeline = [
+  ['$lookup' => [
+      'from' => 'users',
+      'localField' => 'userId',
+      'foreignField' => '_id',
+      'as' => 'user'
+  ]],
+  ['$unwind' => ['path' => '$user', 'preserveNullAndEmptyArrays' => true]],
+];
+if (!empty($match)) {
+    $countPipeline[] = ['$match' => $match];
+}
+$countPipeline[] = ['$count' => 'total'];
 
-// Count query
-$countSql = "SELECT COUNT(*) as total FROM orders o LEFT JOIN users u ON o.user_id = u.mongo_id $whereSql";
-$countStmt = $pdo->prepare($countSql);
-$countStmt->execute($params);
-$totalOrders = $countStmt->fetch()['total'];
+
+$totalResult = $mongoDB->orders->aggregate($countPipeline)->toArray();
+$totalOrders = $totalResult[0]['total'] ?? 0;
 $totalPages = ceil($totalOrders / $limit);
 
-// Get user data
 $user_id = $_SESSION['user_id'];
-$stmt = $pdo->prepare("SELECT * FROM users WHERE id = ?");
-$stmt->execute([$user_id]);
-$user = $stmt->fetch();
+$user = $mongoDB->users->findOne(['_id' => new ObjectId($user_id)]);
 
-// Get filter options from database
-$statusOptions = $pdo->query("SELECT DISTINCT status FROM orders WHERE status IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
-$paymentMethodOptions = $pdo->query("SELECT DISTINCT payment_method FROM orders WHERE payment_method IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
-$shippingStatusOptions = $pdo->query("SELECT DISTINCT shipping_status FROM orders WHERE shipping_status IS NOT NULL")->fetchAll(PDO::FETCH_COLUMN);
+$statusOptions = $mongoDB->orders->distinct('status');
+$paymentMethodOptions = $mongoDB->orders->distinct('payment_method');
+$shippingStatusOptions = $mongoDB->orders->distinct('shipping_status');
 ?>
 
 <!DOCTYPE html>
@@ -132,6 +165,8 @@ $shippingStatusOptions = $pdo->query("SELECT DISTINCT shipping_status FROM order
             to { opacity: 1; transform: translateY(0); }
         }
     </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
 </head>
 <body class="flex bg-gray-900 text-white">
     <?php include '../includes/sidebar.php'; ?>
@@ -283,18 +318,83 @@ $shippingStatusOptions = $pdo->query("SELECT DISTINCT shipping_status FROM order
         <!-- Stats Summary -->
         <div class="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
             <?php
-            // Get statistics
-            $statsQuery = "SELECT 
-                COUNT(*) as total_orders,
-                SUM(final_price) as total_revenue,
-                AVG(final_price) as avg_order_value,
-                COUNT(CASE WHEN o.status = 'confirmed' THEN 1 END) as completed_orders
-                FROM orders o 
-                LEFT JOIN users u ON o.user_id = u.mongo_id 
-                $whereSql";
-            $statsStmt = $pdo->prepare($statsQuery);
-            $statsStmt->execute($params);
-            $stats = $statsStmt->fetch();
+            $match = []; // ← xây dựng bộ lọc y chang đoạn bạn đang dùng bên trên
+
+            // Nếu có bộ lọc thì thêm vào
+            if (!empty($search)) {
+                $regex = new Regex($search, 'i');
+                $match['$or'] = [
+                    ['users.name' => $regex],
+                    ['users.email' => $regex],
+                    ['users.phone' => $regex]
+                ];
+            }
+            
+            if ($status_filter !== '') {
+                $match['status'] = $status_filter;
+            }
+            if ($payment_method_filter !== '') {
+                $match['payment_method'] = $payment_method_filter;
+            }
+            if ($shipping_status_filter !== '') {
+                $match['shipping_status'] = $shipping_status_filter;
+            }
+            if ($price_from > 0 || $price_to > 0) {
+                $match['final_price'] = [];
+                if ($price_from > 0) $match['final_price']['$gte'] = $price_from;
+                if ($price_to > 0) $match['final_price']['$lte'] = $price_to;
+            }
+            if ($date_from && $date_to) {
+                $match['created_date'] = [
+                    '$gte' => new UTCDateTime(strtotime($date_from) * 1000),
+                    '$lte' => new UTCDateTime(strtotime($date_to . ' 23:59:59') * 1000)
+                ];
+            }
+            
+            $pipeline = [
+                [
+                    '$lookup' => [
+                        'from' => 'users',
+                        'localField' => 'user_id',
+                        'foreignField' => '_id',
+                        'as' => 'users'
+                    ]
+                ],
+                ['$unwind' => ['path' => '$users', 'preserveNullAndEmptyArrays' => true]],
+            ];
+            
+            // Thêm điều kiện lọc nếu có
+            if (!empty($match)) {
+                $pipeline[] = ['$match' => $match];
+            }
+            
+            // Thêm stage group để tính toán thống kê
+            $pipeline[] = [
+                '$group' => [
+                    '_id' => null,
+                    'total_orders' => ['$sum' => 1],
+                    'total_revenue' => ['$sum' => '$final_price'],
+                    'avg_order_value' => ['$avg' => '$final_price'],
+                    'completed_orders' => [
+                        '$sum' => [
+                            '$cond' => [
+                                ['==', ['$status', 'confirmed']],
+                                1,
+                                0
+                            ]
+                        ]
+                    ]
+                ]
+            ];
+            
+            // Thực hiện truy vấn
+            $result = $mongoDB->orders->aggregate($pipeline)->toArray();
+            $stats = $result[0] ?? [
+                'total_orders' => 0,
+                'total_revenue' => 0,
+                'avg_order_value' => 0,
+                'completed_orders' => 0
+            ];
             ?>
             
             <div class="bg-gray-800 rounded-lg p-4">
@@ -331,14 +431,15 @@ $shippingStatusOptions = $pdo->query("SELECT DISTINCT shipping_status FROM order
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-700">
+              
                     <?php foreach ($orders as $order): ?>
                         <tr class="hover:bg-gray-700 transition-colors">
-                            <td class="px-4 py-3 font-mono text-blue-400"><?= htmlspecialchars($order['mongo_id']) ?></td>
+                            <td class="px-4 py-3 font-mono text-blue-400"><?= htmlspecialchars($order['_id']) ?></td>
                             <td class="px-4 py-3">
-                                <div><?= htmlspecialchars($order['name'] ?? 'Không xác định') ?></div>
+                                <div><?= htmlspecialchars($order['user']['name'] ?? 'Không xác định') ?></div>
                                 <div class="text-xs text-gray-400">
-                                    <?= htmlspecialchars($order['email'] ?? '') ?>
-                                    <?= htmlspecialchars($order['phone'] ?? '') ?>
+                                    <?= htmlspecialchars($order['user']['email'] ?? '') ?>
+                                    <?= htmlspecialchars($order['user']['phone'] ?? '') ?>
                                 </div>
                             </td>
                             <td class="px-4 py-3 text-center font-semibold text-green-400">
@@ -368,11 +469,13 @@ $shippingStatusOptions = $pdo->query("SELECT DISTINCT shipping_status FROM order
                                 <span class="text-gray-400"><?= date('H:i', strtotime($order['created_date'])) ?></span>
                             </td>
                             <td class="px-4 py-3 text-center space-x-2">
-                                <a href="order_detail?id=<?= $order['mongo_id'] ?>" 
+                                <a href="order_detail?id=<?= $order['_id'] ?>" 
                                    class="text-blue-400 hover:text-blue-300 text-xs">Chi tiết</a>
-                                <a href="/ajax/delete_order?id=<?= $order['mongo_id'] ?>" 
-                                   class="text-red-400 hover:text-red-300 text-xs" 
-                                   onclick="return confirm('Xác nhận xóa đơn hàng?')">Xóa</a>
+                                   <a href="/ajax/delete_order.php?id=<?= $order['_id'] ?>"
+                                    class="text-red-400 hover:text-red-300 text-xs"
+                                    onclick="return confirm('Xác nhận chuyển đơn hàng vào thùng rác?')">
+                                    🗑️ Xoá
+                                    </a>
                             </td>
                         </tr>
                     <?php endforeach ?>
@@ -386,7 +489,23 @@ $shippingStatusOptions = $pdo->query("SELECT DISTINCT shipping_status FROM order
                 </tbody>
             </table>
         </div>
-
+        <?php if (isset($_GET['msg']) && $_GET['msg'] === 'trashed'): ?>
+        <script>
+            Toastify({
+                text: "Đã chuyển đơn hàng vào thùng rác!",
+                duration: 3000,
+                close: true,
+                gravity: "top",
+                position: "right",
+                backgroundColor: "#10B981",
+            }).showToast();
+        </script>
+        <?php endif; ?>
+        <div class="flex justify-end mb-4">
+    <a href="orders_trash" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg text-white font-medium">
+        🗑️ Thùng rác
+    </a>
+</div>
         <!-- Pagination -->
         <?php if ($totalPages > 1): ?>
         <div class="mt-6 flex justify-between items-center">
@@ -413,6 +532,7 @@ $shippingStatusOptions = $pdo->query("SELECT DISTINCT shipping_status FROM order
             </div>
         </div>
         <?php endif; ?>
+        
     </div>
 
     <script>

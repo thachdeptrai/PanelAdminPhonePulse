@@ -42,6 +42,20 @@ try {
     $mongoDB->OrderItem->deleteMany(['variant_id' => $variantOid]);
 
     if ($deleteVariant->getDeletedCount() > 0) {
+        $mongoDB->logs->insertOne([
+            'admin_id' => new MongoDB\BSON\ObjectId($_SESSION['user_id']),
+            'action'   => 'DELETE',
+            'module'   => 'VARIANT',
+            'time'     => new MongoDB\BSON\UTCDateTime(),
+            'details'  => json_encode([
+                'variant_id' => (string)$variant_id,
+                'message'    => 'Xoá biến thể thành công',
+                'timestamp'  => date('Y-m-d H:i:s')
+            ]),
+            'created_at' => new MongoDB\BSON\UTCDateTime(),
+            'updated_at' => new MongoDB\BSON\UTCDateTime()
+        ]);
+        
         echo json_encode(['success' => true, 'message' => 'Xóa biến thể thành công']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Không tìm thấy biến thể để xóa']);

@@ -3,6 +3,9 @@
 include '../includes/config.php';
 include '../includes/functions.php';
 
+use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
+
 header('Content-Type: application/json');
 
 if (!isAdmin()) {
@@ -16,43 +19,73 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 try {
-    $variant_id = $_POST['variant_id'] ?? 0;
-    $color_id = $_POST['color_id'] ?? '';
-    $size_id = $_POST['size_id'] ?? '';
-    $quantity = $_POST['quantity'] ?? 0;
-    $price = $_POST['price'] ?? 0;
+    $variant_id = $_POST['variant_id'] ?? '';
+    $color_id   = $_POST['color_id'] ?? '';
+    $size_id    = $_POST['size_id'] ?? '';
+    $quantity   = (int) ($_POST['quantity'] ?? 0);
+    $price      = (float) ($_POST['price'] ?? 0);
 
-    if (!$variant_id || empty($color_id) || empty($size_id) || $quantity < 0 || $price <= 0) {
-        echo json_encode(['success' => false, 'message' => 'Vui lòng điền đầy đủ thông tin']);
+    if (!isValidMongoId($variant_id) || !isValidMongoId($color_id) || !isValidMongoId($size_id) || $quantity < 0 || $price <= 0) {
+        echo json_encode(['success' => false, 'message' => 'Vui lòng điền đầy đủ thông tin hợp lệ']);
         exit;
     }
-
-    // Get current variant to check product_id
-    $currentStmt = $pdo->prepare("SELECT product_id FROM variants WHERE id = ?");
-    $currentStmt->execute([$variant_id]);
-    $current = $currentStmt->fetch();
     
+
+    $variantObjectId = new ObjectId($variant_id);
+    $colorObjectId = new ObjectId($color_id);
+    $sizeObjectId = new ObjectId($size_id);
+
+    // 🔍 Lấy variant hiện tại để biết product_id
+    $current = $mongoDB->Variant->findOne(['_id' => $variantObjectId]);
+
     if (!$current) {
         echo json_encode(['success' => false, 'message' => 'Biến thể không tồn tại']);
         exit;
     }
 
-    // Check if another variant with same color/size exists
-    $checkStmt = $pdo->prepare("SELECT id FROM variants WHERE product_id = ? AND color_id = ? AND size_id = ?  AND id != ?");
-    $checkStmt->execute([$current['product_id'], $color_id, $size_id, $variant_id]);
-    
-    if ($checkStmt->fetch()) {
+    // 🛡️ Kiểm tra trùng color_id + size_id trong cùng product_id, nhưng khác variant hiện tại
+    $duplicate = $mongoDB->Variant->findOne([
+        'product_id' => $current['product_id'],
+        'color_id'   => $colorObjectId,
+        'size_id'    => $sizeObjectId,
+        '_id'        => ['$ne' => $variantObjectId],
+    ]);
+
+    if ($duplicate) {
         echo json_encode(['success' => false, 'message' => 'Biến thể với màu sắc và kích thước này đã tồn tại']);
         exit;
     }
 
-    $stmt = $pdo->prepare("UPDATE variants SET color_id = ?, size_id = ?, quantity = ?,price =?, modified_date = NOW() WHERE id = ?");
-    $result = $stmt->execute([$color_id, $size_id, $quantity,$price, $variant_id]);
+    // ✅ Update biến thể
+    $updateResult = $mongoDB->Variant->updateOne(
+        ['_id' => $variantObjectId],
+        ['$set' => [
+            'color_id'      => $colorObjectId,
+            'size_id'       => $sizeObjectId,
+            'quantity'      => $quantity,
+            'price'         => $price,
+            'modified_date' => new UTCDateTime()
+        ]]
+    );
 
-    if ($result) {
+    if ($updateResult->getModifiedCount() > 0) {
+        // 📝 Ghi log
+    $mongoDB->logs->insertOne([
+        'admin_id' => new ObjectId($_SESSION['user_id'])?? null,
+        'action'   => 'UPDATE',
+        'module'   => 'VARIANT',
+        'time'     => new UTCDateTime(),
+        'details'  => json_encode([
+            'variant_id' => (string) $variant_id,
+            'message'    => 'Cập nhật biến thể thành công',
+            'timestamp'  => date('Y-m-d H:i:s')
+        ]),
+        'created_at' => new UTCDateTime(),
+        'updated_at' => new UTCDateTime()
+    ]);
         echo json_encode(['success' => true, 'message' => 'Cập nhật biến thể thành công']);
     } else {
-        echo json_encode(['success' => false, 'message' => 'Không thể cập nhật biến thể']);
+        echo json_encode(['success' => false, 'message' => 'Không có thay đổi nào được ghi nhận']);
     }
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'message' => 'Đã xảy ra lỗi: ' . $e->getMessage()]);

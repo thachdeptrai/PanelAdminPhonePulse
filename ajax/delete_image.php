@@ -50,6 +50,24 @@ try {
     $deleteResult = $mongoDB->ProductImage->deleteOne(['_id' => $objectId]);
 
     if ($deleteResult->getDeletedCount() > 0) {
+      
+         $mongoDB->logs->insertOne([
+                'admin_id'  => new ObjectId($_SESSION['user_id']),
+                'action'    => 'DELETE',
+                'module'    => 'PRODUCT_IMAGE',
+                'time'      => new MongoDB\BSON\UTCDateTime(),
+                'details'   => json_encode([
+                    'image_id'    => (string)$objectId,
+                    'image_url'   => $image['image_url'] ?? '',
+                    'product_id'  => isset($image['product_id']) ? (string)$image['product_id'] : null,
+                    'message'     => 'Hình ảnh sản phẩm đã bị xoá',
+                    'ip_address'  => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+                    'user_agent'  => $_SERVER['HTTP_USER_AGENT'] ?? 'unknown',
+                    'timestamp'   => date('Y-m-d H:i:s')
+                ]),
+                'created_at' => new MongoDB\BSON\UTCDateTime(),
+                'updated_at' => new MongoDB\BSON\UTCDateTime()
+            ]);
         echo json_encode(['success' => true, 'message' => 'Xóa hình ảnh thành công']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Không thể xóa hình ảnh']);

@@ -3,6 +3,7 @@ require_once '../includes/config.php';
 require_once '../includes/functions.php';
 
 use MongoDB\BSON\ObjectId;
+use MongoDB\BSON\UTCDateTime;
 
 header('Content-Type: application/json');
 
@@ -47,17 +48,16 @@ try {
     $result = $mongoDB->Product->deleteOne(['_id' => $objectId]);
 
     if ($result->getDeletedCount() > 0) {
-        // Log admin deletion
-        $mongoDB->Log->insertOne([
-            'admin_id' => $_SESSION['admin_id'] ?? null,
-            'action' => 'DELETE_PRODUCT',
+        $mongoDB->logs->insertOne([
+            'admin_id' => new ObjectId($_SESSION['user_id']),
+            'action' => 'DELETE',
             'module' => 'PRODUCT',
-            'time' => time(),
-            'details' => [
-                'product_id' => $mongoId,
-                'action' => 'Product deleted successfully',
+            'time' => new MongoDB\BSON\UTCDateTime(),
+            'details' => json_encode([
+                'product_id' => (string)$mongoId,
+                'message' => 'Xoá sản phẩm thành công',
                 'timestamp' => date('Y-m-d H:i:s')
-            ],
+            ]),
             'created_at' => new MongoDB\BSON\UTCDateTime(),
             'updated_at' => new MongoDB\BSON\UTCDateTime()
         ]);
