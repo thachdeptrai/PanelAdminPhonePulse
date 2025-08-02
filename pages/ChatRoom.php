@@ -9,6 +9,13 @@ try {
     die("ID phiên không hợp lệ");
 }
 $user = $mongoDB->users->findOne(['_id' => $user_id]);
+// Lấy danh sách tất cả user và admin (hoặc chỉ user liên quan)
+$users = iterator_to_array($mongo->users->find([], ['projection' => ['_id' => 1, 'name' => 1]]));
+$userMap = [];
+foreach ($users as $u) {
+    $userMap[(string)$u['_id']] = $u['name'];
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -484,6 +491,20 @@ $user = $mongoDB->users->findOne(['_id' => $user_id]);
             margin-right: 10px;
             font-size: 1.4rem;
         }
+        .room-item.has-unread {
+        box-shadow: 0 0 12px rgba(255,107,129,0.6);
+        }
+        .room-item {
+        transition: all .25s ease;
+        border-radius: 12px;
+        padding: 10px;
+        margin-bottom: 8px;
+        }
+        .seen-label {
+        background: rgba(255,255,255,0.07);
+        padding: 2px 6px;
+        border-radius: 10px;
+        }
 
     </style>
 </head>
@@ -628,7 +649,16 @@ $user = $mongoDB->users->findOne(['_id' => $user_id]);
                     showTypingIndicator(data.isTyping);
                 }
             });
-
+            socket.on('messages_read', ({ roomId, updatedCount }) => {
+                const roomEls = document.querySelectorAll('.room-item');
+                roomEls.forEach(el => {
+                    if (el.innerHTML.includes(roomId.split('_').pop().substr(-8))) {
+                    el.classList.remove('has-unread');
+                    const badge = el.querySelector('.unread-badge');
+                    if (badge) badge.remove();
+                    }
+                });
+                });
             socket.on('room_closed', (data) => {
                 if (currentRoom && data.roomId === currentRoom.roomId) {
                     showNotification('Cuộc trò chuyện đã được đóng', 'info');
@@ -722,29 +752,194 @@ $user = $mongoDB->users->findOne(['_id' => $user_id]);
         }
 
         function createRoomElement(room, type) {
-            const div = document.createElement('div');
-            div.className = `room-item ${type}`;
-            div.onclick = () => type === 'waiting' ? joinRoom(room) : openActiveRoom(room);
-            
-            // Extract short room ID for display
-            const shortRoomId = room.roomId ? room.roomId.split('_').pop().substr(-8) : 'N/A';
-            
-            div.innerHTML = `
-                <div class="room-user">👤 User: ${room.userId || 'Unknown'}</div>
-                <div class="room-meta">
-                    <span class="room-time">🕒 ${formatTime(room.createdAt)}</span>
-                    <span class="room-id">ID: ${shortRoomId}</span>
-                </div>
-                <div class="room-stats">
-                    <span class="stat-badge">📍 ${room.status || 'unknown'}</span>
-                    ${room.adminId ? `<span class="stat-badge">👨‍💼 ${room.adminId}</span>` : ''}
-                </div>
-                ${type === 'waiting' ? '<button class="btn btn-success" style="margin-top: 12px; width: 100%;" onclick="event.stopPropagation()">🚀 Tham gia hỗ trợ</button>' : ''}
-            `;
-            
-            return div;
-        }
+  const div = document.createElement('div');
+  div.className = `room-item ${type}`;
+  div.onclick = () => type === 'waiting' ? joinRoom(room) : openActiveRoom(room);
+  const userMap = <?php echo json_encode($userMap); ?>;
+  // Extract short room ID for display
+  const shortRoomId = room.roomId ? room.roomId.split('_').pop().substr(-8) : 'N/A';
 
+  // Skeleton nội dung ban đầu
+  div.innerHTML = `
+    <div class="room-user">👤 User: ${userMap[room.userId] || 'Unknown'}</div>
+    <div class="room-meta">
+      <div class="room-header">
+        <span class="room-time">🕒 ${formatTime(room.createdAt)}</span>
+        <span class="room-id">ID: ${shortRoomId}</span>
+      </div>
+      <div class="last-message" style="margin-top:4px; font-size:12px; color: #ccc;">
+        Đang tải tin nhắn...
+      </div>
+    </div>
+    <div class="room-stats">
+      <span class="stat-badge">📍 ${room.status || 'unknown'}</span>
+      ${room.adminId ? `<span class="stat-badge">👨‍💼 ${userMap[room.adminId]}</span>` : ''}
+    </div>
+    ${type === 'waiting' ? '<button class="btn btn-success" style="margin-top: 12px; width: 100%;" onclick="event.stopPropagation()">🚀 Tham gia hỗ trợ</button>' : ''}
+  `;
+
+  // Fetch unread count để hiện badge + đổi màu nếu có chưa đọc
+  fetch(`${API_URL}/chat/rooms/${room.roomId}/unread-count`, {
+    headers: { Authorization: `Bearer ${getAuthToken()}` }
+  })
+    .then(r => r.json())
+    .then(data => {
+      if (data.success && data.unread > 0) {
+        const badge = document.createElement('span');
+        badge.className = 'unread-badge';
+        badge.textContent = data.unread;
+        badge.style.cssText = 'background: #ff4757; color: white; padding:4px 8px; border-radius:12px; margin-left:6px; font-size:12px; font-weight: 600; box-shadow: 0 2px 4px rgba(255,71,87,0.3);';
+        div.querySelector('.room-meta')?.appendChild(badge);
+        div.classList.add('has-unread');
+        // đổi nền/viền rõ ràng khi có tin chưa đọc - giống Messenger
+        div.style.background = 'linear-gradient(135deg,#1f2a44,#2f3b6a)';
+        div.style.border = '2px solid #0084ff';
+        div.style.boxShadow = '0 2px 8px rgba(0,132,255,0.2)';
+      } else {
+        // đã đọc hết
+        div.style.background = 'rgba(255,255,255,0.04)';
+      }
+    })
+    .catch(() => {
+      // ignore
+    });
+
+  // Lấy tin nhắn cuối cùng để preview + hiển thị "Đã xem" nếu phù hợp
+  fetch(`${API_URL}/chat/messages/${room.roomId}`, { // fallback: dùng endpoint gốc rồi lấy cuối
+    headers: { Authorization: `Bearer ${getAuthToken()}` }
+  })
+    .then(r => r.json())
+    .then(data => {
+      const lastMsgEl = div.querySelector('.last-message');
+      if (!data.success || !Array.isArray(data.messages)) {
+        if (lastMsgEl) {
+          lastMsgEl.innerHTML = '<span style="color: #888; font-style: italic;">Không lấy được tin nhắn</span>';
+        }
+        return;
+      }
+
+      // Lấy tin nhắn cuối cùng (mới nhất)
+      const messages = data.messages;
+      const lastMessage = messages[messages.length - 1];
+
+      if (!lastMessage) {
+        if (lastMsgEl) {
+          lastMsgEl.innerHTML = '<span style="color: #888; font-style: italic;">Chưa có tin nhắn nào</span>';
+        }
+        return;
+      }
+
+      // Kiểm tra xem tin nhắn có mới không (trong vòng 5 phút)
+      const messageTime = new Date(lastMessage.timestamp);
+      const now = new Date();
+      const isRecentMessage = (now - messageTime) < 5 * 60 * 1000; // 5 phút
+
+      // Hiển thị preview (rút gọn, escape HTML)
+      const previewText = (lastMessage.message || '').replace(/\n/g, ' ').trim();
+      const truncated = previewText.length > 50 ? previewText.slice(0, 47) + '...' : previewText;
+      
+      let display = '';
+      let messageStyle = '';
+      let senderIcon = '';
+      
+      if (lastMessage.senderType === 'admin') {
+        display += 'Bạn: ';
+        senderIcon = '';
+        messageStyle = 'color: #0084ff; font-weight: 500;';
+      } else {
+        // Tin nhắn từ user
+        senderIcon = '💬 ';
+        if (!lastMessage.isRead) {
+          // Tin nhắn chưa đọc - làm nổi bật giống Messenger
+          messageStyle = 'color: #fff; font-weight: 600; background: rgba(0,132,255,0.1); padding: 2px 6px; border-radius: 8px;';
+        } else {
+          messageStyle = 'color: #ccc; font-weight: 400;';
+        }
+      }
+
+      // Thêm indicator cho tin nhắn mới
+      let newIndicator = '';
+      if (isRecentMessage && lastMessage.senderType === 'user' && !lastMessage.isRead) {
+        newIndicator = '<span style="color: #00d4aa; font-size: 10px; font-weight: 600; margin-left: 4px;">● MỚI</span>';
+      }
+
+      display = `${senderIcon}${escapeHtml(truncated)}`;
+
+      // Nếu tin nhắn cuối là của admin và đã được user đọc (isRead === true), show "Đã xem"
+      let seenTag = '';
+      if (lastMessage.senderType === 'admin' && lastMessage.isRead) {
+        seenTag = `<span class="seen-label" style="margin-left:6px; font-size:10px; color:#00d4aa; font-weight: 500;">✓ Đã xem</span>`;
+      } else if (lastMessage.senderType === 'admin' && !lastMessage.isRead) {
+        seenTag = `<span class="seen-label" style="margin-left:6px; font-size:10px; color:#888; font-weight: 500;">✓ Đã gửi</span>`;
+      }
+
+      if (lastMsgEl) {
+        lastMsgEl.innerHTML = `<span style="${messageStyle}">${display}</span>${seenTag}${newIndicator}`;
+        
+        // Thêm animation cho tin nhắn mới
+        if (isRecentMessage && lastMessage.senderType === 'user') {
+          lastMsgEl.style.animation = 'pulse 2s ease-in-out infinite';
+        }
+      }
+
+      // Thêm timestamp cho tin nhắn (giống Messenger)
+      const timeAgo = getTimeAgo(messageTime);
+      const existingTime = div.querySelector('.message-time');
+      if (!existingTime) {
+        const timeEl = document.createElement('div');
+        timeEl.className = 'message-time';
+        timeEl.style.cssText = 'font-size: 10px; color: #888; margin-top: 2px;';
+        timeEl.textContent = timeAgo;
+        lastMsgEl.parentNode.appendChild(timeEl);
+      }
+    })
+    .catch(() => {
+      const lastMsgEl = div.querySelector('.last-message');
+      if (lastMsgEl) {
+        lastMsgEl.innerHTML = '<span style="color: #f44336; font-style: italic;">⚠️ Lỗi tải tin nhắn</span>';
+      }
+    });
+
+  return div;
+}
+
+// Helper function để tính thời gian "time ago"
+function getTimeAgo(date) {
+  const now = new Date();
+  const diffInSeconds = Math.floor((now - date) / 1000);
+  
+  if (diffInSeconds < 60) return 'Vừa xong';
+  if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} phút trước`;
+  if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} giờ trước`;
+  return `${Math.floor(diffInSeconds / 86400)} ngày trước`;
+}
+
+// Thêm CSS animations (chỉ thêm một lần)
+if (!document.getElementById('messenger-style-css')) {
+  const messengerStyle = document.createElement('style');
+  messengerStyle.id = 'messenger-style-css';
+  messengerStyle.textContent = `
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    .room-item:hover {
+      transform: translateY(-1px);
+      transition: transform 0.2s ease;
+    }
+    
+    .unread-badge {
+      animation: fadeInScale 0.3s ease-out;
+    }
+    
+    @keyframes fadeInScale {
+      0% { opacity: 0; transform: scale(0.5); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+  `;
+  document.head.appendChild(messengerStyle);
+}
         async function joinRoom(room) {
             if (!room || !room.roomId) {
                 showNotification('Thông tin phòng không hợp lệ', 'error');
@@ -804,7 +999,8 @@ $user = $mongoDB->users->findOne(['_id' => $user_id]);
                 
                 // Load messages
                 await loadMessages(room.roomId);
-                
+                // Đánh dấu tất cả tin nhắn user trong phòng này là đã đọc
+                socket.emit('mark_as_read', { roomId: room.roomId });
                 // Show chat interface
                 showChatInterface(room);
                 
@@ -1368,4 +1564,4 @@ $user = $mongoDB->users->findOne(['_id' => $user_id]);
         console.log('🚀 Admin Chat Support initialized successfully!');
     </script>
 </body>
-</html>
+</html> 
