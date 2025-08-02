@@ -63,6 +63,8 @@ RewriteRule ^voucher$ pages/voucher.php [L]
 RewriteRule ^profile$ pages/profile.php [L]
 #chatroom
 RewriteRule ^chatroom$ pages/chatRoom.php [L]
+# customer
+RewriteRule ^customers$ pages/customers.php [L]
 ErrorDocument 404 /404.php
 
 # Nếu không match thì tự tìm file.php

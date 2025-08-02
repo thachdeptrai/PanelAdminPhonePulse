@@ -333,7 +333,7 @@ const categoryValues = <?= $categoryValues ?>;
 
 document.addEventListener('DOMContentLoaded', () => {
   renderCategoryChart();
-  initRevenueChart(); // mặc định là "Tháng này"
+  initRevenueChart(); // mặc định là "month"
 
   const rangeSelect = document.getElementById('rangeSelect');
   const customDateRange = document.getElementById('customDateRange');
@@ -341,26 +341,26 @@ document.addEventListener('DOMContentLoaded', () => {
   const endInput = document.getElementById('endDate');
 
   // Khi chọn loại khoảng thời gian
-  rangeSelect.addEventListener('change', () => {
+  rangeSelect?.addEventListener('change', () => {
     const type = rangeSelect.value;
 
     if (type === 'custom') {
-      customDateRange.classList.remove('hidden');
-      const start = startInput.value;
-      const end = endInput.value;
+      customDateRange?.classList.remove('hidden');
+      const start = startInput?.value;
+      const end = endInput?.value;
       if (start && end) initRevenueChart('custom', start, end);
     } else {
-      customDateRange.classList.add('hidden');
+      customDateRange?.classList.add('hidden');
       initRevenueChart(type);
     }
   });
 
   // Khi chọn ngày custom
   [startInput, endInput].forEach(input => {
-    input.addEventListener('change', () => {
-      if (rangeSelect.value === 'custom') {
-        const start = startInput.value;
-        const end = endInput.value;
+    input?.addEventListener('change', () => {
+      if (rangeSelect?.value === 'custom') {
+        const start = startInput?.value;
+        const end = endInput?.value;
         if (start && end) {
           initRevenueChart('custom', start, end);
         }
@@ -372,7 +372,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // ================= VẼ BIỂU ĐỒ DOANH SỐ THEO DANH MỤC =================
 function renderCategoryChart() {
   const ctx = document.getElementById('categoryChart')?.getContext('2d');
-  if (!ctx) return;
+  if (!ctx) {
+    console.warn('categoryChart element not found');
+    return;
+  }
 
   new Chart(ctx, {
     type: 'bar',
@@ -382,14 +385,20 @@ function renderCategoryChart() {
         label: 'Doanh số (VNĐ)',
         data: categoryValues,
         backgroundColor: 'rgba(54, 162, 235, 0.7)',
+        borderColor: 'rgba(54, 162, 235, 1)',
+        borderWidth: 1,
         borderRadius: 6
       }]
     },
     options: {
       responsive: true,
+      maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
         tooltip: {
+          backgroundColor: '#1e293b',
+          titleColor: '#fff',
+          bodyColor: '#e5e7eb',
           callbacks: {
             label: ctx => new Intl.NumberFormat('vi-VN', {
               style: 'currency',
@@ -402,8 +411,14 @@ function renderCategoryChart() {
         y: {
           beginAtZero: true,
           ticks: {
-            callback: v => v.toLocaleString('vi-VN') + 'đ'
-          }
+            color: '#cbd5e1',
+            callback: v => v.toLocaleString('vi-VN') + '₫'
+          },
+          grid: { color: 'rgba(255,255,255,0.05)' }
+        },
+        x: {
+          ticks: { color: '#cbd5e1' },
+          grid: { display: false }
         }
       }
     }
@@ -412,17 +427,34 @@ function renderCategoryChart() {
 
 // ================= FETCH DỮ LIỆU DOANH THU TỪ PHP =================
 async function fetchRevenueData(type = 'month', start = '', end = '') {
-  let url = `/ajax/get_revenue_data.php?type=${type}`;
-  if (type === 'custom' && start && end) {
-    url += `&start=${start}&end=${end}`;
-  }
+  try {
+    let url = `ajax/get_revenue_data.php?type=${type}`;
+    if (type === 'custom' && start && end) {
+      url += `&start=${start}&end=${end}`;
+    }
 
-  const res = await fetch(url);
-  const data = await res.json();
-  return {
-    labels: data.map(i => i.label),
-    values: data.map(i => i.total)
-  };
+    console.log('Fetching data from:', url);
+
+    const res = await fetch(url);
+    const data = await res.json();
+    
+    if (!res.ok || data.error) {
+      throw new Error(data.message || 'Failed to fetch revenue data');
+    }
+
+    console.log('Revenue data received:', data);
+
+    return {
+      labels: data.map(i => i.label),
+      values: data.map(i => i.total)
+    };
+  } catch (error) {
+    console.error('Error fetching revenue data:', error);
+    return {
+      labels: [],
+      values: []
+    };
+  }
 }
 
 // ================= VẼ BIỂU ĐỒ DOANH THU =================
@@ -430,17 +462,30 @@ let revenueChart;
 async function initRevenueChart(type = 'month', start = '', end = '') {
   const { labels, values } = await fetchRevenueData(type, start, end);
   const ctx = document.getElementById('revenueChart')?.getContext('2d');
-  if (!ctx) return;
+  
+  if (!ctx) {
+    console.warn('revenueChart element not found');
+    return;
+  }
 
-  if (revenueChart) revenueChart.destroy();
+  if (revenueChart) {
+    revenueChart.destroy();
+  }
 
-  // Format labels dạng dd/mm
+  // Format labels dựa trên type
   const formattedLabels = labels.map(date => {
     const d = new Date(date);
-    return d.toLocaleDateString('vi-VN', {
-      day: '2-digit',
-      month: '2-digit'
-    });
+    if (type === 'year') {
+      return d.toLocaleDateString('vi-VN', {
+        month: '2-digit',
+        year: 'numeric'
+      });
+    } else {
+      return d.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit'
+      });
+    }
   });
 
   const gradient = ctx.createLinearGradient(0, 0, 0, 300);
@@ -450,7 +495,7 @@ async function initRevenueChart(type = 'month', start = '', end = '') {
   revenueChart = new Chart(ctx, {
     type: 'line',
     data: {
-      labels: formattedLabels, // ✅ dùng nhãn đã định dạng
+      labels: formattedLabels,
       datasets: [{
         label: 'Doanh Thu (VND)',
         data: values,
@@ -461,7 +506,7 @@ async function initRevenueChart(type = 'month', start = '', end = '') {
         pointBorderColor: '#fff',
         pointRadius: 3,
         pointHoverRadius: 7,
-        tension: 0.5,
+        tension: 0.4,
         fill: true
       }]
     },
@@ -479,7 +524,10 @@ async function initRevenueChart(type = 'month', start = '', end = '') {
           bodyColor: '#e5e7eb',
           padding: 12,
           borderColor: '#00FF87',
-          borderWidth: 1
+          borderWidth: 1,
+          callbacks: {
+            label: ctx => `Doanh thu: ${ctx.parsed.y.toLocaleString('vi-VN')}₫`
+          }
         },
         legend: {
           display: true,
@@ -496,18 +544,22 @@ async function initRevenueChart(type = 'month', start = '', end = '') {
             color: '#cbd5e1',
             callback: v => v.toLocaleString('vi-VN') + '₫'
           },
-          grid: { color: 'rgba(255,255,255,0.05)', drawTicks: false }
+          grid: { 
+            color: 'rgba(255,255,255,0.05)', 
+            drawTicks: false 
+          }
         },
         x: {
-          ticks: { color: '#cbd5e1' },
+          ticks: { 
+            color: '#cbd5e1',
+            maxTicksLimit: 10 // Giới hạn số tick để tránh bị chồng lấp
+          },
           grid: { display: false }
         }
       }
     }
   });
 }
-
-
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
 </body>

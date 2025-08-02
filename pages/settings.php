@@ -32,11 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'facebook_url' => $_POST['facebook_url'] ?? '',
         'zalo_url' => $_POST['zalo_url'] ?? '',
         'youtube_url' => $_POST['youtube_url'] ?? '',
-        'shipping_note' => $_POST['shipping_note'] ?? '',
-        'payment_note' => $_POST['payment_note'] ?? '',
         'meta_title' => $_POST['meta_title'] ?? '',
-        'meta_description' => $_POST['meta_description'] ?? '',
-        'meta_keywords' => $_POST['meta_keywords'] ?? '',
         'updated_at' => new MongoDB\BSON\UTCDateTime(),
     ];
 
@@ -59,6 +55,8 @@ include '../includes/sidebar.php';
     <meta charset="UTF-8">
     <title>Cài đặt Website</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../assets/css/dashboard.css">
+
 </head>
 <body class="bg-gray-900 text-white flex">
 <div class="ml-64 w-full p-6">
@@ -105,30 +103,9 @@ include '../includes/sidebar.php';
         </div>
 
         <div class="md:col-span-2">
-            <label class="block text-sm mb-1">Ghi chú giao hàng</label>
-            <textarea name="shipping_note" class="w-full bg-gray-800 p-2 rounded"><?= htmlspecialchars($settings['shipping_note'] ?? '') ?></textarea>
-        </div>
-
-        <div class="md:col-span-2">
-            <label class="block text-sm mb-1">Ghi chú thanh toán</label>
-            <textarea name="payment_note" class="w-full bg-gray-800 p-2 rounded"><?= htmlspecialchars($settings['payment_note'] ?? '') ?></textarea>
-        </div>
-
-        <div class="md:col-span-2">
             <label class="block text-sm mb-1">Meta Title</label>
             <input name="meta_title" value="<?= htmlspecialchars($settings['meta_title'] ?? '') ?>" class="w-full bg-gray-800 p-2 rounded" />
         </div>
-
-        <div class="md:col-span-2">
-            <label class="block text-sm mb-1">Meta Description</label>
-            <textarea name="meta_description" class="w-full bg-gray-800 p-2 rounded"><?= htmlspecialchars($settings['meta_description'] ?? '') ?></textarea>
-        </div>
-
-        <div class="md:col-span-2">
-            <label class="block text-sm mb-1">Meta Keywords</label>
-            <input name="meta_keywords" value="<?= htmlspecialchars($settings['meta_keywords'] ?? '') ?>" class="w-full bg-gray-800 p-2 rounded" />
-        </div>
-
 
         <div class="md:col-span-2">
             <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded">💾 Lưu cài đặt</button>

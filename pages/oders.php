@@ -158,6 +158,7 @@ $shippingStatusOptions = $mongoDB->orders->distinct('shipping_status');
     <meta charset="UTF-8">
     <title>Quản lý Đơn hàng</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="../assets/css/dashboard.css">
     <style>
         .filter-section { animation: slideDown 0.3s ease-out; }
         @keyframes slideDown {
