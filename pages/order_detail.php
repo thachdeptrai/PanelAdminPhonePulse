@@ -68,7 +68,7 @@ foreach ($order['items'] as $item) {
             <p><strong>Trạng thái:</strong> <?= htmlspecialchars($order['status']) ?></p>
             <p><strong>Phương thức thanh toán:</strong> <?= htmlspecialchars($order['payment_method']) ?> (<?= htmlspecialchars($order['payment_status']) ?>)</p>
             <p><strong>Trạng thái vận chuyển:</strong> <?= htmlspecialchars($order['shipping_status']) ?></p>
-            <p><strong>Ngày cập nhật:</strong> <?= $order['updatedAt']->toDateTime()->format('d/m/Y H:i') ?></p>
+            <p><strong>Ngày cập nhật:</strong> <?= $order['modified_date']->toDateTime()->format('d/m/Y H:i') ?></p>
             <p><strong>Ngày vận chuyển:</strong> 
                 <?= isset($order['shipping_date']) ? $order['shipping_date']->toDateTime()->format('d/m/Y H:i') : 'Chưa vận chuyển' ?>
             </p>

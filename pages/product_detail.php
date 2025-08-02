@@ -148,6 +148,12 @@ $categories = iterator_to_array($categories);
                 <button onclick="deleteProduct('<?php echo (string)$product['_id'] ?>')" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded-lg font-medium">
                     Xóa sản phẩm
                 </button>
+                <button onclick="openAddColorModal()" class="bg-purple-600 hover:bg-purple-700 px-4 py-2 rounded-lg font-medium">
+            🎨 Thêm màu sắc
+            </button>
+            <button onclick="openAddSizeModal()" class="bg-pink-600 hover:bg-pink-700 px-4 py-2 rounded-lg font-medium">
+            📏 Thêm kích thước
+            </button>
             </div>
         </header>
 
@@ -337,7 +343,7 @@ $categories = iterator_to_array($categories);
                 </svg>
             </button>
         </div>
-
+       
         <!-- Form Start -->
         <form id="editForm" class="space-y-6">
 
@@ -542,6 +548,48 @@ $categories = iterator_to_array($categories);
             </div>
         </form>
     </div>
+</div>
+<div id="colorModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+  <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md border border-gray-300">
+    <div class="flex justify-between items-center border-b pb-3 mb-4">
+      <h2 class="text-xl font-bold text-gray-800">🎨 Thêm màu sắc</h2>
+      <button onclick="closeColorModal()" class="text-gray-400 hover:text-red-500">❌</button>
+    </div>
+    <form id="colorForm" class="space-y-4">
+      <input type="text" name="color_name" id="colorName" placeholder="Tên màu sắc" required
+             class="w-full rounded-lg border border-gray-300 px-4 py-2 bg-gray-100 text-gray-900 focus:border-purple-500 focus:ring-2 focus:ring-purple-300" />
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeColorModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg">
+          Hủy
+        </button>
+        <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg font-medium">
+          ✅ Thêm
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<div id="sizeModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+  <div class="bg-white rounded-xl shadow-2xl p-6 w-full max-w-md border border-gray-300">
+    <div class="flex justify-between items-center border-b pb-3 mb-4">
+      <h2 class="text-xl font-bold text-gray-800">📏 Thêm kích thước</h2>
+      <button onclick="closeSizeModal()" class="text-gray-400 hover:text-red-500">❌</button>
+    </div>
+    <form id="sizeForm" class="space-y-4">
+      <input type="text" name="size_name" id="sizeName" placeholder="ví dụ: Pro, Pro Max" required
+             class="w-full rounded-lg border border-gray-300 px-4 py-2 bg-gray-100 text-gray-900 focus:border-pink-500 focus:ring-2 focus:ring-pink-300" />
+      <input type="text" name="storage" id="sizeStorage" placeholder="Ví dụ 1TB , 64GB"
+             class="w-full rounded-lg border border-gray-300 px-4 py-2 bg-gray-100 text-gray-900" />
+      <div class="flex justify-end gap-2">
+        <button type="button" onclick="closeSizeModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg">
+          Hủy
+        </button>
+        <button type="submit" class="bg-pink-600 hover:bg-pink-700 text-white px-5 py-2 rounded-lg font-medium">
+          ✅ Thêm
+        </button>
+      </div>
+    </form>
+  </div>
 </div>
 
    <!-- Edit Variant Modal -->
@@ -883,5 +931,69 @@ function changeMainImage(url) {
         mainImage.src = url;
     }
 }
+
+// Color modal
+function openAddColorModal() {
+    document.getElementById('colorModal').classList.remove('hidden');
+    document.getElementById('colorName').value = '';
+    document.getElementById('colorStorage').value = '';
+}
+function closeColorModal() {
+    document.getElementById('colorModal').classList.add('hidden');
+}
+
+// Size modal
+function openAddSizeModal() {
+    document.getElementById('sizeModal').classList.remove('hidden');
+    document.getElementById('sizeName').value = '';
+    document.getElementById('sizeStorage').value = '';
+}
+function closeSizeModal() {
+    document.getElementById('sizeModal').classList.add('hidden');
+}
+
+// Submit color
+document.getElementById('colorForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const color_name = document.getElementById('colorName').value;
+
+    fetch(`../ajax/add_color.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `color_name=${encodeURIComponent(color_name)}`
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            alert('✅ Thêm màu sắc thành công!');
+            location.reload();
+        } else {
+            alert('❌ ' + data.message);
+        }
+    });
+});
+
+// Submit size
+document.getElementById('sizeForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const size_name = document.getElementById('sizeName').value;
+    const storage = document.getElementById('sizeStorage').value;
+
+    fetch(`../ajax/add_size.php`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `size_name=${encodeURIComponent(size_name)}&storage=${encodeURIComponent(storage)}`
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            alert('✅ Thêm kích thước thành công!');
+            location.reload();
+        } else {
+            alert('❌ ' + data.message);
+        }
+    });
+});
+
     </script>
 </html>

@@ -465,8 +465,8 @@ $shippingStatusOptions = $mongoDB->orders->distinct('shipping_status');
                             </td>
                             <td class="px-4 py-3 text-center"><?= htmlspecialchars($order['shipping_status'] ?? '') ?></td>
                             <td class="px-4 py-3 text-center text-xs">
-                                <?= date('d/m/Y', strtotime($order['created_date'])) ?><br>
-                                <span class="text-gray-400"><?= date('H:i', strtotime($order['created_date'])) ?></span>
+                                <?= date('d/m/Y', strtotime($order['created_date']->toDateTime()->format('d/m/Y H:i'))) ?><br>
+                                <span class="text-gray-400"><?= date('H:i', strtotime($order['created_date']->toDateTime()->format('d/m/Y H:i'))) ?></span>
                             </td>
                             <td class="px-4 py-3 text-center space-x-2">
                                 <a href="order_detail?id=<?= $order['_id'] ?>" 

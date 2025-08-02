@@ -141,6 +141,9 @@ $baseUrl = "$protocol://$host";
                 <button onclick="openAddModal()" class="bg-primary hover:bg-primary-dark px-4 py-2 rounded-lg font-medium">
                     Thêm sản phẩm
                 </button>
+                <button onclick="openAddCategoryModal()" class="bg-primary-600 hover:bg-primary-700 px-4 py-2 rounded-lg font-medium">
+                    ➕ Thêm danh mục
+                </button>
             </div>
         </header>
 
@@ -244,6 +247,35 @@ $baseUrl = "$protocol://$host";
         </div>
     </div>
 
+<!-- Add Category Modal -->
+<div id="categoryModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
+  <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border border-gray-300">
+    <div class="flex justify-between items-center border-b pb-3 mb-4">
+      <h2 class="text-xl font-bold text-gray-800">📁 Thêm danh mục</h2>
+      <button onclick="closeCategoryModal()" class="text-gray-400 hover:text-red-500">
+        ❌
+      </button>
+    </div>
+
+    <form id="categoryForm" class="space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Tên danh mục</label>
+        <input type="text" name="name" id="categoryName" required
+               class="w-full rounded-lg border border-gray-300 px-4 py-2 bg-gray-100 text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-300 outline-none" />
+      </div>
+
+      <div class="flex justify-end gap-2 pt-3">
+        <button type="button" onclick="closeCategoryModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg">
+          Hủy
+        </button>
+        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-medium">
+          ✅ Thêm
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
     <!-- Add/Edit Product Modal -->
     <div id="productModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 hidden">
     <div class="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-gray-200">
@@ -312,6 +344,42 @@ $baseUrl = "$protocol://$host";
 
 
     <script>
+        function openAddCategoryModal() {
+            document.getElementById('categoryModal').classList.remove('hidden');
+            document.getElementById('categoryName').value = '';
+        }
+
+        function closeCategoryModal() {
+            document.getElementById('categoryModal').classList.add('hidden');
+        }
+
+        // Submit danh mục
+        document.getElementById('categoryForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const name = document.getElementById('categoryName').value;
+
+            fetch(`${baseUrl}/ajax/add_category.php`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `name=${encodeURIComponent(name)}`
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    alert('✅ Thêm danh mục thành công!');
+                    location.reload(); // reload để cập nhật dropdown
+                } else {
+                    alert('❌ Lỗi: ' + data.message);
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('❌ Có lỗi xảy ra khi thêm danh mục');
+            });
+        });
+
         // Get base URL dynamically
         const baseUrl = '<?php echo $baseUrl; ?>';
         
