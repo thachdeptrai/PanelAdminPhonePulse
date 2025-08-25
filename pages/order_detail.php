@@ -49,7 +49,7 @@ foreach ($order['items'] as $item) {
 }
 
 ?>
-
+  <?php include '../includes/sidebar.php'; ?>
 <!DOCTYPE html>
 <html lang="vi">
 <head>

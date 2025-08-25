@@ -7,7 +7,7 @@
                         <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
                     </svg>
                 </div>
-                <span class="font-semibold"><?= $settings['site_name'] ?? 'null' ?></span>
+                <span class="font-semibold"><?php echo $settings['site_name'] ?? 'null'?></span>
 
             </div>
             <button class="text-gray-400 md:hidden">
@@ -93,11 +93,20 @@
                     </a>
                 </li>
                 <li>
+                    <a href="notifications" class="sidebar-item flex items-center px-4 py-3 rounded-lg hover:bg-gray-200 transition">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-3">
+                         <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                         <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                      </svg>
+                        Notifications
+                </a>
+              </li>
+                <li>
                     <a href="chatroom" class="sidebar-item flex items-center px-4 py-3 rounded-lg">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-3">
                             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
                         </svg>
-                        Hỗ trợ khách hàng 
+                        Hỗ trợ khách hàng
                     </a>
                 </li>
             </ul>

@@ -4,7 +4,14 @@ session_start();
 
 use MongoDB\BSON\UTCDateTime;
 use MongoDB\BSON\ObjectId;
-
+if (!isset($_SESSION['user_id'])) {
+    header("Location: dang_nhap");
+    exit;
+  }
+  
+  $userId = new ObjectId($_SESSION['user_id']);
+  $user = $mongoDB->users->findOne(['_id' => $userId]);
+  if (!$user) die("Không tìm thấy người dùng");
 // Encode HTML an toàn
 function e($string)
 {

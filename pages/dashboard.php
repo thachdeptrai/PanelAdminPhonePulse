@@ -2,8 +2,6 @@
 require_once '../includes/config.php'; // có $mongoDB
 require_once '../includes/functions.php';
 use MongoDB\BSON\ObjectId;
-$settings = $mongoDB->settings->findOne([]) ?? ['theme_color' => '#0ea5e9'];
-
 // ✅ Check quyền admin
 if (!isAdmin()) {
     header('Location: dang_nhap');

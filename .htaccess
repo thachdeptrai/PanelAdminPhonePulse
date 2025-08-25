@@ -65,6 +65,8 @@ RewriteRule ^profile$ pages/profile.php [L]
 RewriteRule ^chatroom$ pages/chatRoom.php [L]
 # customer
 RewriteRule ^customers$ pages/customers.php [L]
+#notifications
+RewriteRule ^notifications$ pages/notifications.php [L]
 ErrorDocument 404 /404.php
 
 # Nếu không match thì tự tìm file.php
