@@ -4,6 +4,7 @@ require_once '../includes/config.php';
 require_once '../includes/functions.php';
 use MongoDB\BSON\ObjectId;
 
+
 // ✅ Check quyền admin
 if (!isAdmin()) {
     header('Location: dang_nhap');
@@ -16,7 +17,9 @@ if (!$user_id_raw) {
     header('Location: dang_nhap');
     exit;
 }
-
+$userId = new ObjectId($_SESSION['user_id']);
+$user = $mongoDB->users->findOne(['_id' => $userId]);
+if (!$user) die("Không tìm thấy người dùng");
 // ✅ Validate ObjectId
 try {
     $user_id = new ObjectId($user_id_raw);
