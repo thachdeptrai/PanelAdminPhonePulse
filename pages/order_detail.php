@@ -15,6 +15,25 @@ if (!$orderId || !preg_match('/^[a-f\d]{24}$/i', $orderId)) {
     exit;
 }
 
+$formatDate = function($value, $format = 'd/m/Y H:i') {
+    if (empty($value)) return '';
+    if ($value instanceof MongoDB\BSON\UTCDateTime) {
+        return $value->toDateTime()->format($format);
+    }
+    // String timestamp or datetime
+    $timestamp = is_numeric($value) ? (int)$value : strtotime((string)$value);
+    if ($timestamp === false) return '';
+    return date($format, $timestamp);
+};
+
+$toObjectId = function($id) {
+    if ($id instanceof ObjectId) return $id;
+    if (is_string($id) && preg_match('/^[a-f\d]{24}$/i', $id)) {
+        return new ObjectId($id);
+    }
+    return null;
+};
+
 $order = $mongoDB->orders->findOne(['_id' => new ObjectId($orderId)]);
 // Lấy đơn hàng từ MongoDB
 
@@ -24,26 +43,36 @@ if (!$order) {
 }
 
 // Lấy thông tin user
-$user = $mongoDB->users->findOne(['_id' => $order['user_id'] ?? $order['userId'] ?? null]);
+$userIdRaw = $order['user_id'] ?? $order['userId'] ?? null;
+$userId    = $toObjectId($userIdRaw) ?? $userIdRaw; // fallback nếu DB lưu khác kiểu
+$user      = $userId ? $mongoDB->users->findOne(['_id' => $userId]) : null;
 
 // Lấy thông tin sản phẩm và biến thể
 $items = [];
-foreach ($order['items'] as $item) {
-    $product = $mongoDB->products->findOne(['_id' => $item['productId']]);
-    $variant = $mongoDB->variants->findOne(['_id' => $item['variantId']]);
+$orderItems = is_iterable($order['items'] ?? []) ? $order['items'] : [];
+foreach ($orderItems as $item) {
+    $productIdRaw = $item['productId'] ?? $item['product_id'] ?? null;
+    $variantIdRaw = $item['variantId'] ?? $item['variant_id'] ?? null;
+    $productId    = $toObjectId($productIdRaw) ?? $productIdRaw;
+    $variantId    = $toObjectId($variantIdRaw) ?? $variantIdRaw;
+
+    $product = $productId ? $mongoDB->Product->findOne(['_id' => $productId]) : null;
+    $variant = $variantId ? $mongoDB->Variant->findOne(['_id' => $variantId]) : null;
 
     if ($product && $variant) {
         // Lấy tên màu
-        $color = $mongoDB->colors->findOne(['_id' => $variant['color_id']]);
-        $size = $mongoDB->sizes->findOne(['_id' => $variant['size_id']]);
+        $color = $mongoDB->Color->findOne(['_id' => $variant['color_id']]);
+        $size = $mongoDB->Size->findOne(['_id' => $variant['size_id']]);
 
+        $quantity   = (int)($item['quantity'] ?? 0);
+        $price      = (int)($variant['price'] ?? 0);
         $items[] = [
-            'product_name' => $product['product_name'],
-            'quantity' => $item['quantity'],
-            'price' => $variant['price'],
+            'product_name' => $product['product_name'] ?? '-',
+            'quantity' => $quantity,
+            'price' => $price,
             'color_name' => $color['color_name'] ?? '-',
             'size_name' => $size['size_name'] ?? '-',
-            'total_price' => $item['quantity'] * $variant['price'],
+            'total_price' => $quantity * $price,
         ];
     }
 }
@@ -62,34 +91,37 @@ foreach ($order['items'] as $item) {
         <h1 class="text-2xl font-bold mb-4">🧾 Chi tiết đơn hàng: <?= $order['_id'] ?></h1>
         <div class="mb-6">
             <p><strong>Khách hàng:</strong> <?= htmlspecialchars($user['name'] ?? 'Không xác định') ?> (<?= htmlspecialchars($user['email'] ?? '') ?>)</p>
-            <p><strong>Ngày đặt:</strong> <?= date('d/m/Y H:i', strtotime($order['created_date'])) ?></p>
-            <p><strong>Địa chỉ giao:</strong> <?= nl2br(htmlspecialchars($order['shipping_address'])) ?></p>
-            <p><strong>Ghi chú:</strong> <?= nl2br(htmlspecialchars(string: $order['note'])) ?></p>
-            <p><strong>Trạng thái:</strong> <?= htmlspecialchars($order['status']) ?></p>
-            <p><strong>Phương thức thanh toán:</strong> <?= htmlspecialchars($order['payment_method']) ?> (<?= htmlspecialchars($order['payment_status']) ?>)</p>
-            <p><strong>Trạng thái vận chuyển:</strong> <?= htmlspecialchars($order['shipping_status']) ?></p>
-            <p><strong>Ngày cập nhật:</strong> <?= $order['modified_date']->toDateTime()->format('d/m/Y H:i') ?></p>
+            <p><strong>Ngày đặt:</strong> <?= $formatDate($order['created_date']) ?></p>
+            <p><strong>Địa chỉ giao:</strong> <?= nl2br(htmlspecialchars($order['shipping_address'] ?? '')) ?></p>
+            <p><strong>Ghi chú:</strong> <?= nl2br(htmlspecialchars($order['note'] ?? '')) ?></p>
+            <p><strong>Trạng thái:</strong> <?= htmlspecialchars($order['status'] ?? '') ?></p>
+            <p><strong>Phương thức thanh toán:</strong> <?= htmlspecialchars($order['payment_method'] ?? '') ?> (<?= htmlspecialchars($order['payment_status'] ?? '') ?>)</p>
+            <p><strong>Trạng thái vận chuyển:</strong> <?= htmlspecialchars($order['shipping_status'] ?? '') ?></p>
+            <p><strong>Ngày cập nhật:</strong> <?= $formatDate($order['modified_date']) ?></p>
             <p><strong>Ngày vận chuyển:</strong> 
-                <?= isset($order['shipping_date']) ? $order['shipping_date']->toDateTime()->format('d/m/Y H:i') : 'Chưa vận chuyển' ?>
+                <?= !empty($order['shipping_date']) ? $formatDate($order['shipping_date']) : 'Chưa vận chuyển' ?>
             </p>
             <?php
             if (!empty($order['delivered_date'])) {
-                $estimatedDeliveryDate = $order['delivered_date']->toDateTime()->format('d/m/Y');
-            } elseif ($order['shipping_status'] === 'shipping' && !empty($order['shipping_date'])) {
+                $estimatedDeliveryDate = $formatDate($order['delivered_date'], 'd/m/Y');
+            } elseif (($order['shipping_status'] ?? '') === 'shipping' && !empty($order['shipping_date'])) {
                 require_once '../includes/delivery_ai.php';
                 $aiDays = estimateShippingDaysAI($order['shipping_address']);
-                $estimatedTimestamp = strtotime("+" . $aiDays . " days", $order['shipping_date']->toDateTime()->getTimestamp());
-                $estimatedDeliveryDate = date('d/m/Y', $estimatedTimestamp);
+                $shippingTs = ($order['shipping_date'] instanceof MongoDB\BSON\UTCDateTime)
+                    ? $order['shipping_date']->toDateTime()->getTimestamp()
+                    : (is_numeric($order['shipping_date']) ? (int)$order['shipping_date'] : strtotime((string)$order['shipping_date']));
+                $estimatedTimestamp = $shippingTs ? strtotime("+" . (int)$aiDays . " days", $shippingTs) : null;
+                $estimatedDeliveryDate = $estimatedTimestamp ? date('d/m/Y', $estimatedTimestamp) : 'Chưa có dự kiến giao';
             } else {
                 $estimatedDeliveryDate = "Chưa có dự kiến giao";
             }
             ?>
 
             <p><strong>Ngày nhận hàng dự kiến:</strong> 
-                <?= !empty($order['delivered_date']) ? $order['delivered_date']->toDateTime()->format('d/m/Y H:i') : $estimatedDeliveryDate ?>
+                <?= !empty($order['delivered_date']) ? $formatDate($order['delivered_date']) : $estimatedDeliveryDate ?>
             </p>
 
-            <p><strong>Ngày tạo:</strong> <?= $order['created_date']->toDateTime()->format('d/m/Y H:i') ?></p>
+            <p><strong>Ngày tạo:</strong> <?= $formatDate($order['created_date']) ?></p>
         </div>
         <div class="bg-gray-800 rounded-lg overflow-hidden">
             <table class="w-full text-sm">
@@ -117,7 +149,7 @@ foreach ($order['items'] as $item) {
         </div>
 
         <div class="mt-6 text-right text-lg">
-            <strong>Tổng đơn:</strong> <?= number_format($order['final_price'], 0, ',', '.') ?>đ
+            <strong>Tổng đơn:</strong> <?= number_format((int)($order['final_price'] ?? 0), 0, ',', '.') ?>đ
         </div>
         <h2 class="text-xl font-bold mt-10 mb-3">🛠️ Cập nhật trạng thái</h2>
 
