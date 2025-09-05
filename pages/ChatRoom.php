@@ -16,6 +16,20 @@ foreach ($users as $u) {
     $userMap[(string)$u['_id']] = $u['name'];
 }
 
+// ===== Preload rooms directly from MongoDB (no API) =====
+try {
+    $waitingCursor = $mongoDB->chatrooms->find(['status' => 'waiting'], ['sort' => ['updatedAt' => -1, 'createdAt' => -1]]);
+    $activeCursor  = $mongoDB->chatrooms->find(['status' => 'active', 'adminId' => (string)$user_id], ['sort' => ['updatedAt' => -1, 'createdAt' => -1]]);
+    $closedCursor  = $mongoDB->chatrooms->find(['status' => 'closed'], ['sort' => ['updatedAt' => -1, 'createdAt' => -1], 'limit' => 20]);
+    $preloadedWaitingRooms = iterator_to_array($waitingCursor);
+    $preloadedActiveRooms  = iterator_to_array($activeCursor);
+    $preloadedClosedRooms  = iterator_to_array($closedCursor);
+} catch (Exception $e) {
+    $preloadedWaitingRooms = [];
+    $preloadedActiveRooms = [];
+    $preloadedClosedRooms = [];
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="vi">
@@ -23,7 +37,7 @@ foreach ($users as $u) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin Chat Support</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    
     
     <style>
         * {
@@ -529,6 +543,11 @@ foreach ($users as $u) {
                     <div class="section-title">💬 Đang chat</div>
                     <div id="activeRooms"></div>
                 </div>
+
+                <div class="room-section">
+                    <div class="section-title">🗄️ Đã đóng</div>
+                    <div id="closedRooms"></div>
+                </div>
             </div>
             <button class="back-arrow-btn" onclick="goBack()">
             <span class="arrow"></span>
@@ -551,7 +570,9 @@ foreach ($users as $u) {
                             <span class="stat-badge" id="roomId">ID: loading...</span>
                         </div>
                     </div>
-                    <button class="btn btn-danger" onclick="closeRoom()">🔒 Đóng Chat</button>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <button class="btn btn-danger" onclick="closeRoom()">🔒 Đóng Chat</button>
+                    </div>
                 </div>
 
                 <div class="chat-messages" id="chatMessages">
@@ -581,6 +602,33 @@ foreach ($users as $u) {
         const SOCKET_URL = 'http://localhost:5000';
         const API_URL = 'http://localhost:5000/api';
         
+        // Preloaded data (from PHP, direct DB)
+        const PRELOADED_WAITING_ROOMS = <?php echo json_encode(array_map(fn($r) => [
+            'roomId' => (string)($r['roomId'] ?? ''),
+            'userId' => (string)($r['userId'] ?? ''),
+            'adminId' => (string)($r['adminId'] ?? ''),
+            'status' => (string)($r['status'] ?? 'waiting'),
+            'createdAt' => isset($r['createdAt']) ? $r['createdAt']->toDateTime()->format(DateTime::ATOM) : null,
+            'updatedAt' => isset($r['updatedAt']) ? $r['updatedAt']->toDateTime()->format(DateTime::ATOM) : null,
+        ], $preloadedWaitingRooms)); ?>;
+        const PRELOADED_ACTIVE_ROOMS = <?php echo json_encode(array_map(fn($r) => [
+            'roomId' => (string)($r['roomId'] ?? ''),
+            'userId' => (string)($r['userId'] ?? ''),
+            'adminId' => (string)($r['adminId'] ?? ''),
+            'status' => (string)($r['status'] ?? 'active'),
+            'createdAt' => isset($r['createdAt']) ? $r['createdAt']->toDateTime()->format(DateTime::ATOM) : null,
+            'updatedAt' => isset($r['updatedAt']) ? $r['updatedAt']->toDateTime()->format(DateTime::ATOM) : null,
+        ], $preloadedActiveRooms)); ?>;
+        const PRELOADED_CLOSED_ROOMS = <?php echo json_encode(array_map(fn($r) => [
+            'roomId' => (string)($r['roomId'] ?? ''),
+            'userId' => (string)($r['userId'] ?? ''),
+            'adminId' => (string)($r['adminId'] ?? ''),
+            'status' => (string)($r['status'] ?? 'closed'),
+            'createdAt' => isset($r['createdAt']) ? $r['createdAt']->toDateTime()->format(DateTime::ATOM) : null,
+            'updatedAt' => isset($r['updatedAt']) ? $r['updatedAt']->toDateTime()->format(DateTime::ATOM) : null,
+        ], $preloadedClosedRooms)); ?>;
+        let usedPreloadedOnce = false;
+
         // Global variables
         let socket;
         let currentRoom = null;
@@ -588,10 +636,20 @@ foreach ($users as $u) {
         console.log('Admin ID:', adminId);
         let typingTimeout;
         let refreshInterval;
+        let messageRefreshInterval;
+        let lastRenderedMessageAt = null;
+        let isLoadingHistory = false;
 
         // Initialize
         document.addEventListener('DOMContentLoaded', function() {
             initializeSocket();
+            // Render preloaded rooms immediately for first paint
+            if (PRELOADED_WAITING_ROOMS.length || PRELOADED_ACTIVE_ROOMS.length || PRELOADED_CLOSED_ROOMS.length) {
+                displayWaitingRooms(PRELOADED_WAITING_ROOMS);
+                displayActiveRooms(PRELOADED_ACTIVE_ROOMS);
+                displayClosedRooms(PRELOADED_CLOSED_ROOMS);
+                usedPreloadedOnce = true;
+            }
             loadRooms();
             startAutoRefresh();
             
@@ -623,11 +681,28 @@ foreach ($users as $u) {
                 document.getElementById('messageInput').value = '';
                 });
         function initializeSocket() {
-             socket = io(SOCKET_URL);
+             socket = io(SOCKET_URL, {
+                transports: ['websocket'],
+                reconnection: true,
+                reconnectionAttempts: Infinity,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000,
+                path: '/socket.io'
+             });
 
             socket.on('connect', () => {
                 console.log('✅ Connected to server');
                 updateConnectionStatus(true);
+                // Re-join current room on reconnect
+                if (currentRoom && currentRoom.roomId) {
+                    const joinPayload = {
+                        roomId: currentRoom.roomId,
+                        userId: adminId,
+                        userType: 'admin'
+                    };
+                    socket.emit('join_room', joinPayload);
+                    socket.emit('joinRoom', joinPayload);
+                }
             });
 
             socket.on('disconnect', () => {
@@ -635,13 +710,30 @@ foreach ($users as $u) {
                 updateConnectionStatus(false);
             });
 
-            socket.on('receive_message', (message) => {
-                if (currentRoom && message.roomId === currentRoom.roomId) {
+            const getMessageRoomId = (m) => m?.roomId || m?.room_id || m?.room || m?.roomID || m?.room_id_str;
+            const handleIncoming = (message) => {
+                const incomingRoomId = getMessageRoomId(message);
+                if (currentRoom && incomingRoomId === currentRoom.roomId) {
                     displayMessage(message);
-                    playNotificationSound();
                 }
                 // Update room list to show new message indicator
                 loadRooms();
+            };
+
+            socket.on('receive_message', handleIncoming);
+            socket.on('receiveMessage', handleIncoming);
+            socket.on('message', handleIncoming);
+            socket.on('new_message', handleIncoming);
+            socket.on('newMessage', handleIncoming);
+            socket.on('chat_message', handleIncoming);
+            socket.on('private_message', handleIncoming);
+
+            // Catch-all logger & fallback handler
+            socket.onAny((event, payload) => {
+                try { console.debug('socket event:', event, payload); } catch (e) {}
+                if (payload && (payload.message || payload.content)) {
+                    handleIncoming(payload);
+                }
             });
 
             socket.on('user_typing', (data) => {
@@ -672,12 +764,15 @@ foreach ($users as $u) {
                 loadRooms();
                 playNotificationSound();
             });
+            // Initialize connection error handling AFTER socket is ready
+            handleConnectionError();
         }
 
         async function loadRooms() {
             await Promise.all([
                 loadWaitingRooms(),
-                loadActiveRooms()
+                loadActiveRooms(),
+                loadClosedRooms()
             ]);
         }
 
@@ -696,8 +791,11 @@ foreach ($users as $u) {
                     console.error('Error loading waiting rooms:', data.message);
                 }
             } catch (error) {
-                console.error('Error loading waiting rooms:', error);
-                showNotification('Không thể tải danh sách phòng chờ', 'error');
+                if (!usedPreloadedOnce && PRELOADED_WAITING_ROOMS.length) {
+                    displayWaitingRooms(PRELOADED_WAITING_ROOMS);
+                } else {
+                    console.error('Error loading waiting rooms:', error);
+                }
             }
         }
 
@@ -716,8 +814,35 @@ foreach ($users as $u) {
                     console.error('Error loading active rooms:', data.message);
                 }
             } catch (error) {
-                console.error('Error loading active rooms:', error);
-                showNotification('Không thể tải danh sách phòng đang hoạt động', 'error');
+                if (!usedPreloadedOnce && PRELOADED_ACTIVE_ROOMS.length) {
+                    displayActiveRooms(PRELOADED_ACTIVE_ROOMS);
+                } else {
+                    console.error('Error loading active rooms:', error);
+                }
+            }
+        }
+
+        async function loadClosedRooms() {
+            try {
+                const response = await fetch(`${API_URL}/chat/rooms/closed`, {
+                    headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+                });
+                if (!response.ok) throw new Error('closed rooms ' + response.status);
+                const data = await response.json();
+                if (data.success && Array.isArray(data.rooms) && data.rooms.length > 0) {
+                    displayClosedRooms(data.rooms);
+                } else if (PRELOADED_CLOSED_ROOMS.length > 0) {
+                    // Fallback to preloaded DB data if API returns empty
+                    displayClosedRooms(PRELOADED_CLOSED_ROOMS);
+                } else {
+                    displayClosedRooms([]);
+                }
+            } catch (e) {
+                if (PRELOADED_CLOSED_ROOMS.length > 0) {
+                    displayClosedRooms(PRELOADED_CLOSED_ROOMS);
+                } else {
+                    displayClosedRooms([]);
+                }
             }
         }
 
@@ -751,10 +876,24 @@ foreach ($users as $u) {
             });
         }
 
+        function displayClosedRooms(rooms) {
+            const container = document.getElementById('closedRooms');
+            container.innerHTML = '';
+            if (!Array.isArray(rooms) || rooms.length === 0) {
+                container.innerHTML = '<div style="padding: 12px 20px; color:#666; font-size: 13px;">Không có cuộc trò chuyện đã đóng</div>';
+                return;
+            }
+            rooms.forEach(room => {
+                const el = createRoomElement(room, 'closed');
+                el.style.opacity = '0.7';
+                container.appendChild(el);
+            });
+        }
+
         function createRoomElement(room, type) {
   const div = document.createElement('div');
   div.className = `room-item ${type}`;
-  div.onclick = () => type === 'waiting' ? joinRoom(room) : openActiveRoom(room);
+  div.onclick = () => type === 'waiting' ? joinRoom(room) : (type === 'active' ? openActiveRoom(room) : openClosedRoom(room));
   const userMap = <?php echo json_encode($userMap); ?>;
   // Extract short room ID for display
   const shortRoomId = room.roomId ? room.roomId.split('_').pop().substr(-8) : 'N/A';
@@ -778,31 +917,7 @@ foreach ($users as $u) {
     ${type === 'waiting' ? '<button class="btn btn-success" style="margin-top: 12px; width: 100%;" onclick="event.stopPropagation()">🚀 Tham gia hỗ trợ</button>' : ''}
   `;
 
-  // Fetch unread count để hiện badge + đổi màu nếu có chưa đọc
-  fetch(`${API_URL}/chat/rooms/${room.roomId}/unread-count`, {
-    headers: { Authorization: `Bearer ${getAuthToken()}` }
-  })
-    .then(r => r.json())
-    .then(data => {
-      if (data.success && data.unread > 0) {
-        const badge = document.createElement('span');
-        badge.className = 'unread-badge';
-        badge.textContent = data.unread;
-        badge.style.cssText = 'background: #ff4757; color: white; padding:4px 8px; border-radius:12px; margin-left:6px; font-size:12px; font-weight: 600; box-shadow: 0 2px 4px rgba(255,71,87,0.3);';
-        div.querySelector('.room-meta')?.appendChild(badge);
-        div.classList.add('has-unread');
-        // đổi nền/viền rõ ràng khi có tin chưa đọc - giống Messenger
-        div.style.background = 'linear-gradient(135deg,#1f2a44,#2f3b6a)';
-        div.style.border = '2px solid #0084ff';
-        div.style.boxShadow = '0 2px 8px rgba(0,132,255,0.2)';
-      } else {
-        // đã đọc hết
-        div.style.background = 'rgba(255,255,255,0.04)';
-      }
-    })
-    .catch(() => {
-      // ignore
-    });
+  // (Ẩn unread badge do API chưa có)
 
   // Lấy tin nhắn cuối cùng để preview + hiển thị "Đã xem" nếu phù hợp
   fetch(`${API_URL}/chat/messages/${room.roomId}`, { // fallback: dùng endpoint gốc rồi lấy cuối
@@ -984,6 +1099,30 @@ if (!document.getElementById('messenger-style-css')) {
                 return;
             }
             await openRoom(room);
+            // Hiện lại input nếu trước đó xem phòng đã đóng
+            const inputBox = document.querySelector('.chat-input');
+            if (inputBox) inputBox.style.display = 'block';
+            const typing = document.getElementById('typingIndicator');
+            if (typing) typing.style.display = 'none';
+        }
+
+        async function openClosedRoom(room) {
+            if (!room || !room.roomId) {
+                showNotification('Thông tin phòng không hợp lệ', 'error');
+                return;
+            }
+            // Chỉ xem lại tin nhắn, không join socket, không cho gửi
+            try {
+                currentRoom = { ...room, status: 'closed' };
+                showChatInterface(room);
+                // Ẩn input gửi tin
+                document.querySelector('.chat-input').style.display = 'none';
+                document.getElementById('typingIndicator').style.display = 'none';
+                await loadMessages(room.roomId);
+            } catch (e) {
+                console.error('Error open closed room:', e);
+                showNotification('Không thể mở phòng đã đóng', 'error');
+            }
         }
 
         async function openRoom(room) {
@@ -991,14 +1130,18 @@ if (!document.getElementById('messenger-style-css')) {
                 currentRoom = room;
                 
                 // Join socket room
-                socket.emit('join_room', {
+                const joinPayload = {
                     roomId: room.roomId,
                     userId: adminId,
                     userType: 'admin'
-                });
+                };
+                socket.emit('join_room', joinPayload);
+                socket.emit('joinRoom', joinPayload);
                 
-                // Load messages
+                // Load messages (suppress notification sounds during initial load)
+                isLoadingHistory = true;
                 await loadMessages(room.roomId);
+                isLoadingHistory = false;
                 // Đánh dấu tất cả tin nhắn user trong phòng này là đã đọc
                 socket.emit('mark_as_read', { roomId: room.roomId });
                 // Show chat interface
@@ -1075,6 +1218,7 @@ if (!document.getElementById('messenger-style-css')) {
 
             // Gửi lên server
             socket.emit('send_message', messageData);
+            socket.emit('sendMessage', messageData);
 
             // Hiển thị ngay lập tức lên giao diện
             displayMessage({
@@ -1183,6 +1327,8 @@ if (!document.getElementById('messenger-style-css')) {
             }
         }
 
+        // Message polling fallback disabled by default (re-enable only if server events are unavailable)
+
         function showLoadingState(isLoading) {
             const buttons = document.querySelectorAll('.btn-success');
             buttons.forEach(btn => {
@@ -1266,27 +1412,8 @@ if (!document.getElementById('messenger-style-css')) {
         }
 
         function playNotificationSound() {
-            // Create audio context for notification sound
-            try {
-                const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-                
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-                
-                oscillator.frequency.value = 800;
-                oscillator.type = 'sine';
-                
-                gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-                gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.1);
-                gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
-                
-                oscillator.start(audioContext.currentTime);
-                oscillator.stop(audioContext.currentTime + 0.5);
-            } catch (error) {
-                console.log('Could not play notification sound:', error);
-            }
+            // Sound disabled globally per user request
+            return;
         }
 
         function formatTime(timestamp) {
@@ -1462,6 +1589,7 @@ if (!document.getElementById('messenger-style-css')) {
 
         // Add connection retry logic
         function handleConnectionError() {
+            if (!socket || typeof socket.on !== 'function') return;
             let retryCount = 0;
             const maxRetries = 5;
             const retryDelay = 2000; // 2 seconds
@@ -1486,8 +1614,6 @@ if (!document.getElementById('messenger-style-css')) {
             });
         }
 
-        // Initialize connection error handling
-        handleConnectionError();
 
         // Add auto-scroll to new messages
         function scrollToBottom(smooth = true) {
@@ -1523,7 +1649,7 @@ if (!document.getElementById('messenger-style-css')) {
             scrollToBottom();
             
             // Play sound for new user messages
-            if (message.senderType === 'user') {
+            if (!isLoadingHistory && message.senderType === 'user') {
                 playNotificationSound();
             }
         }
