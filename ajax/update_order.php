@@ -36,7 +36,7 @@ if (!$order) {
 // 🧠 Flow hạn chế rollback
 $allowedStatusFlow = [
     'pending'   => ['confirmed', 'cancelled'],
-    'confirmed' => [],
+    'confirmed' => ['cancelled'],
     'cancelled' => [],
 ];
 
