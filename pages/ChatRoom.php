@@ -551,7 +551,7 @@ foreach ($users as $u) {
                             <span class="stat-badge" id="roomId">ID: loading...</span>
                         </div>
                     </div>
-                    <button class="btn btn-danger" onclick="closeRoom()">🔒 Đóng Chat</button>
+                    <!-- <button class="btn btn-danger" onclick="closeRoom()">🔒 Đóng Chat</button> -->
                 </div>
 
                 <div class="chat-messages" id="chatMessages">

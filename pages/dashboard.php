@@ -70,7 +70,7 @@ foreach ($cursor as $order) {
 
 // ✅ Doanh thu theo danh mục
 $categoryRevenue = [];
-$orders = $mongoDB->orders->find();
+$orders = $mongoDB->orders->find(['payment_status' => 'paid']);
 
 foreach ($orders as $order) {
     $items = $order['items'] ?? [];
@@ -419,7 +419,7 @@ function renderCategoryChart() {
           grid: { display: false }
         }
       }
-    }
+    } 
   });
 }
 

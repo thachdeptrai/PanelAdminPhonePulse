@@ -11,8 +11,11 @@ try {
     $pipeline = [
         [
             '$match' => [
-                'status' => ['$ne' => 'cancelled']
-            ]
+                'status' => ['$ne' => 'cancelled'], // loại bỏ đơn hủy
+                '$or' => [
+                    ['payment_status' => 'paid']
+                ]
+        ]
         ],
         [
             '$unwind' => '$items'

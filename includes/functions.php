@@ -56,7 +56,10 @@ function getDashboardStats()
 
     // ========== 1. Doanh thu & đơn hàng tháng này ==========
     $cursor = $mongoDB->orders->aggregate([
-        ['$match' => ['created_date' => ['$gte' => $startOfThisMonth]]],
+        ['$match' => [
+        'created_date' => ['$gte' => $startOfThisMonth],
+        'payment_status' => 'paid'   // thêm điều kiện
+    ]],
         ['$group' => [
             '_id' => null,
             'revenue' => ['$sum' => '$final_price'],
@@ -70,11 +73,12 @@ function getDashboardStats()
     // ========== 2. Doanh thu & đơn hàng tháng trước ==========
     $cursor = $mongoDB->orders->aggregate([
         ['$match' => [
-            'created_date' => [
-                '$gte' => $startOfLastMonth,
-                '$lt'  => $startOfThisMonth
-            ]
-        ]],
+        'created_date' => [
+            '$gte' => $startOfLastMonth,
+            '$lt'  => $startOfThisMonth
+        ],
+        'payment_status' => 'paid'   // thêm điều kiện
+    ]],
         ['$group' => [
             '_id' => null,
             'revenue' => ['$sum' => '$final_price'],

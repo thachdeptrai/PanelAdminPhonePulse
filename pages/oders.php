@@ -465,10 +465,15 @@ $shippingStatusOptions = $mongoDB->orders->distinct('shipping_status');
                                 <div class="text-xs text-gray-400"><?= htmlspecialchars($order['payment_status'] ?? '') ?></div>
                             </td>
                             <td class="px-4 py-3 text-center"><?= htmlspecialchars($order['shipping_status'] ?? '') ?></td>
-                            <td class="px-4 py-3 text-center text-xs">
-                                <?= date('d/m/Y', strtotime($order['created_date']->toDateTime()->format('d/m/Y H:i'))) ?><br>
-                                <span class="text-gray-400"><?= date('H:i', strtotime($order['created_date']->toDateTime()->format('d/m/Y H:i'))) ?></span>
-                            </td>
+                           <?php
+                                $dt = $order['created_date']->toDateTime(); // MongoDB UTC
+                                $dt->setTimezone(new DateTimeZone('Asia/Ho_Chi_Minh')); // đổi sang giờ Việt Nam
+                                ?>
+                                <td class="px-4 py-3 text-center text-xs">
+                                    <?= $dt->format('d/m/Y') ?><br>
+                                    <span class="text-gray-400"><?= $dt->format('H:i') ?></span>
+                                </td>
+ 
                             <td class="px-4 py-3 text-center space-x-2">
                                 <a href="order_detail?id=<?= $order['_id'] ?>" 
                                    class="text-blue-400 hover:text-blue-300 text-xs">Chi tiết</a>

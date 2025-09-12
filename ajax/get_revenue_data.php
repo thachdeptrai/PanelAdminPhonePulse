@@ -3,6 +3,7 @@ require_once '../includes/config.php'; // $mongoDB có ở đây
 use MongoDB\BSON\UTCDateTime;
 
 header('Content-Type: application/json');
+$match = ['payment_status' => 'paid']; // chỉ lấy đơn đã thanh toán
 
 $type  = $_GET['type']  ?? 'month';
 $start = $_GET['start'] ?? null;
@@ -49,13 +50,11 @@ try {
             break;
     }
 
-    // ✅ Thêm điều kiện thời gian vào match
-    if ($from && $to) {
-        $match['created_date'] = [
-            '$gte' => new UTCDateTime($from->getTimestamp() * 1000),
-            '$lte' => new UTCDateTime($to->getTimestamp() * 1000),
-        ];
-    }
+    $match = [
+    'status' => ['$ne' => 'cancelled'], // không lấy đơn hủy
+    'payment_status' => 'paid'          // chỉ lấy đơn đã thanh toán
+];
+
 
     $pipeline = [
         ['$match' => $match],
