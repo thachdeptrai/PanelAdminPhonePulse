@@ -207,8 +207,8 @@ foreach ($userCursor as $u) {
                     </button>
 
                     <div class="dropdown-content mt-2 w-48 rounded-md shadow-lg py-1 z-50">
-                        <a href="profile" class="block px-4 py-2 text-sm hover:bg-dark-light">Profile</a>
-                        <a href="settings" class="block px-4 py-2 text-sm hover:bg-dark-light">Settings</a>
+                        <a href="profile" class="block px-4 py-2 text-sm hover:bg-dark-light">Hồ sơ</a>
+                        <a href="settings" class="block px-4 py-2 text-sm hover:bg-dark-light">Cài đặt</a>
                         <div class="border-t border-gray-700"></div>
                         <a href="dang_xuat" class="block px-4 py-2 text-sm text-red-400 hover:bg-dark-light">Logout</a>
                     </div>

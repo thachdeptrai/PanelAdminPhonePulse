@@ -183,7 +183,7 @@ include '../includes/sidebar.php';
                 <div class="glass-card rounded-2xl p-8 shadow-2xl">
                     <div class="flex items-center mb-6">
                         <i class="fas fa-edit text-theme text-2xl mr-3"></i>
-                        <h2 class="text-2xl font-bold text-white">Profile Information</h2>
+                        <h2 class="text-2xl font-bold text-white">Thông tin Hồ sơ</h2>
                     </div>
 
                     <form method="POST" class="space-y-6">
@@ -191,7 +191,7 @@ include '../includes/sidebar.php';
                             <div>
                                 <label class="flex items-center mb-3 text-sm font-medium text-gray-300">
                                     <i class="fas fa-user mr-2 text-theme"></i>
-                                    Full Name
+                                    Họ và tên
                                 </label>
                                 <input type="text" name="name" value="<?= htmlspecialchars($user['name'] ?? '') ?>" 
                                        class="admin-input w-full text-white p-4 rounded-xl focus:outline-none" 
@@ -201,7 +201,7 @@ include '../includes/sidebar.php';
                             <div>
                                 <label class="flex items-center mb-3 text-sm font-medium text-gray-300">
                                     <i class="fas fa-envelope mr-2 text-theme"></i>
-                                    Email Address
+                                    Địa chỉ email
                                 </label>
                                 <input type="email" name="email" value="<?= htmlspecialchars($user['email'] ?? '') ?>" 
                                        class="admin-input w-full text-white p-4 rounded-xl focus:outline-none" 
@@ -213,7 +213,7 @@ include '../includes/sidebar.php';
                             <div>
                                 <label class="flex items-center mb-3 text-sm font-medium text-gray-300">
                                     <i class="fas fa-phone mr-2 text-theme"></i>
-                                    Phone Number
+                                    Số điện thoại
                                 </label>
                                 <input type="text" name="phone" value="<?= htmlspecialchars($user['phone'] ?? '') ?>" 
                                        class="admin-input w-full text-white p-4 rounded-xl focus:outline-none">
@@ -222,7 +222,7 @@ include '../includes/sidebar.php';
                             <div>
                                 <label class="flex items-center mb-3 text-sm font-medium text-gray-300">
                                     <i class="fas fa-map-marker-alt mr-2 text-theme"></i>
-                                    Address
+                                    Địa chỉ
                                 </label>
                                 <input type="text" name="address" value="<?= htmlspecialchars($user['address'] ?? '') ?>" 
                                        class="admin-input w-full text-white p-4 rounded-xl focus:outline-none">
@@ -232,21 +232,21 @@ include '../includes/sidebar.php';
                         <div>
                             <label class="flex items-center mb-3 text-sm font-medium text-gray-300">
                                 <i class="fas fa-lock mr-2 text-theme"></i>
-                                New Password
+                                Mật khẩu mới
                             </label>
                             <input type="password" name="password" placeholder="Leave blank to keep current password" 
                                    class="admin-input w-full text-white p-4 rounded-xl focus:outline-none">
-                            <p class="text-gray-400 text-xs mt-2">Minimum 6 characters required</p>
+                            <p class="text-gray-400 text-xs mt-2">Tối thiểu 6 ký tự</p>
                         </div>
 
                         <div class="flex items-center justify-between pt-6 border-t border-gray-700">
                             <div class="flex items-center text-gray-400 text-sm">
                                 <i class="fas fa-info-circle mr-2"></i>
-                                All changes are saved immediately
+                                Tất cả thay đổi được lưu  
                             </div>
                             <button type="submit" class="bg-theme hover:opacity-90 transition-all duration-300 text-white px-8 py-4 rounded-xl font-semibold shadow-theme flex items-center">
                                 <i class="fas fa-save mr-2"></i>
-                                Save Changes
+                                Lưu thay đổi
                             </button>
                         </div>
                     </form>
@@ -263,7 +263,7 @@ include '../includes/sidebar.php';
                     <h3 class="text-xl font-bold text-white mb-1"><?= htmlspecialchars($user['name'] ?? 'Admin User') ?></h3>
                     <p class="text-gray-400 text-sm mb-4"><?= htmlspecialchars($user['email'] ?? '') ?></p>
                     <div class="bg-theme/20 text-theme px-3 py-1 rounded-full text-xs font-medium inline-block">
-                        <i class="fas fa-crown mr-1"></i>Administrator
+                        <i class="fas fa-crown mr-1"></i>Quản trị viên
                     </div>
                 </div>
 
@@ -271,20 +271,20 @@ include '../includes/sidebar.php';
                 <div class="glass-card rounded-2xl p-6">
                     <h3 class="text-xl font-bold text-white mb-4 flex items-center">
                         <i class="fas fa-bolt text-theme mr-2"></i>
-                        Quick Actions
+                        Hành động nhanh
                     </h3>
                     <div class="space-y-3">
                         <button class="w-full bg-gray-700/50 hover:bg-gray-600/50 transition-colors text-white p-3 rounded-lg text-left flex items-center">
                             <i class="fas fa-key mr-3 text-yellow-400"></i>
-                            Change Password
+                            Thay đổi mật khẩu
                         </button>
                         <button class="w-full bg-gray-700/50 hover:bg-gray-600/50 transition-colors text-white p-3 rounded-lg text-left flex items-center">
                             <i class="fas fa-shield-alt mr-3 text-green-400"></i>
-                            Security Settings
+                            Cài đặt bảo mật
                         </button>
                         <button class="w-full bg-gray-700/50 hover:bg-gray-600/50 transition-colors text-white p-3 rounded-lg text-left flex items-center">
                             <i class="fas fa-download mr-3 text-blue-400"></i>
-                            Export Data
+                            Xuất dữ liệu
                         </button>
                     </div>
                 </div>
@@ -293,21 +293,21 @@ include '../includes/sidebar.php';
                 <div class="glass-card rounded-2xl p-6">
                     <h3 class="text-xl font-bold text-white mb-4 flex items-center">
                         <i class="fas fa-chart-line text-theme mr-2"></i>
-                        Activity
+                        Hoạt động
                     </h3>
                     <div class="space-y-3 text-sm">
                         <div class="flex justify-between items-center">
-                            <span class="text-gray-400">Last Login</span>
+                            <span class="text-gray-400">Lần đăng nhập cuối</span>
                             <span class="text-white"><?= $lastLogin ? $lastLogin->toDateTime()->format('M d, H:i') : 'Never' ?></span>
                         </div>
                         <div class="flex justify-between items-center">
-                            <span class="text-gray-400">Profile Updated</span>
+                            <span class="text-gray-400">Cập nhật hồ sơ</span>
                             <span class="text-white">Today</span>
                         </div>
                         <div class="flex justify-between items-center">
-                            <span class="text-gray-400">Account Status</span>
+                            <span class="text-gray-400">Trạng thái tài khoản</span>
                             <span class="text-green-400 flex items-center">
-                                <i class="fas fa-circle text-xs mr-1"></i>Active
+                                <i class="fas fa-circle text-xs mr-1"></i>Hoạt động
                             </span>
                         </div>
                     </div>
@@ -321,7 +321,7 @@ include '../includes/sidebar.php';
 <?php if ($success): ?>
 <script>
     Toastify({
-        text: "✅ Profile updated successfully!",
+        text: "✅ Hồ sơ đã được cập nhật thành công!",
         duration: 4000,
         gravity: "top",
         position: "right",

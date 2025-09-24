@@ -135,7 +135,7 @@ $userChange  = $stats['user_change'] ?? '0%';
     <div class="content-area ml-64 flex-1 min-h-screen">
         <!-- Top Navigation -->
         <header class="bg-dark-light border-b border-dark px-6 py-4 flex items-center justify-between sticky top-0 z-50">
-            <h1 class="text-2xl font-semibold">Dashboard Overview</h1>
+            <h1 class="text-2xl font-semibold">Trang Chủ</h1>
 
             <div class="flex items-center space-x-4">
                 <button class="relative text-gray-400 hover:text-white">
@@ -158,8 +158,8 @@ $userChange  = $stats['user_change'] ?? '0%';
                     </button>
 
                     <div class="dropdown-content mt-2 w-48 rounded-md shadow-lg py-1 z-50">
-                        <a href="profile" class="block px-4 py-2 text-sm hover:bg-dark-light">Profile</a>
-                        <a href="settings" class="block px-4 py-2 text-sm hover:bg-dark-light">Settings</a>
+                        <a href="profile" class="block px-4 py-2 text-sm hover:bg-dark-light">Hồ sơ</a>
+                        <a href="settings" class="block px-4 py-2 text-sm hover:bg-dark-light">Cài đặt</a>
                         <div class="border-t border-gray-700"></div>
                         <a href="dang_xuat" class="block px-4 py-2 text-sm text-red-400 hover:bg-dark-light">Logout</a>
                     </div>

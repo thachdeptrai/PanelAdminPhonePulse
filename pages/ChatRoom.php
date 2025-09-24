@@ -529,7 +529,7 @@ try {
             <a href="trang_chu" class="site-name">
             <i class="fas fa-home"></i> <?= htmlspecialchars($settings['site_name']) ?>
              </a>
-                <h3>Chat Support</h3>
+                <h3>Hỗ Trợ Khách Hàng</h3>
                 <p>Admin: <?php echo htmlspecialchars($user['name']) ?></p>
             </div>
             
