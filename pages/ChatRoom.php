@@ -770,7 +770,7 @@ try {
             await Promise.all([
                 loadWaitingRooms(),
                 loadActiveRooms(),
-                loadClosedRooms()
+                // loadClosedRooms()
             ]);
         }
 
