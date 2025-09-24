@@ -731,11 +731,9 @@ $categories = iterator_to_array($categories);
                 }
             })
             .catch(async error => {
-    const raw = await error?.response?.text?.();
-    console.error('LỖI KHI FETCH:', error);
-    console.log('Nội dung phản hồi:', raw);
-    alert('Có lỗi xảy ra khi gửi request!');
-});
+                console.error('LỖI KHI FETCH:', error);
+                alert('Có lỗi xảy ra khi gửi request!');
+            });
         });
 
         // Add image form submission
