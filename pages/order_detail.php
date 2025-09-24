@@ -66,8 +66,14 @@ foreach ($orderItems as $item) {
 
         $quantity   = (int)($item['quantity'] ?? 0);
         $price      = (int)($variant['price'] ?? 0);
+        
+        // Lấy ảnh sản phẩm từ bảng product_image
+        $productImages = $mongoDB->ProductImage->find(['product_id' => $productId])->toArray();
+        $productImage = !empty($productImages) ? $productImages[0]['image_url'] ?? null : null;
+        
         $items[] = [
             'product_name' => $product['product_name'] ?? '-',
+            'product_image' => $productImage,
             'quantity' => $quantity,
             'price' => $price,
             'color_name' => $color['color_name'] ?? '-',
@@ -127,6 +133,7 @@ foreach ($orderItems as $item) {
             <table class="w-full text-sm">
                 <thead class="bg-gray-700 text-left">
                     <tr>
+                        <th class="px-4 py-2">Ảnh</th>
                         <th class="px-4 py-2">Sản phẩm</th>
                         <th class="px-4 py-2 text-center">Màu</th>
                         <th class="px-4 py-2 text-center">Size</th>
@@ -137,6 +144,17 @@ foreach ($orderItems as $item) {
                 </thead>
                 <?php $total = 0; foreach ($items as $item): ?>
             <tr class="border-t border-gray-700">
+                <td class="px-4 py-2">
+                    <?php if (!empty($item['product_image'])): ?>
+                        <img src="<?= htmlspecialchars($item['product_image']) ?>" 
+                             alt="<?= htmlspecialchars($item['product_name']) ?>" 
+                             class="w-16 h-16 object-cover rounded-lg">
+                    <?php else: ?>
+                        <div class="w-16 h-16 bg-gray-600 rounded-lg flex items-center justify-center">
+                            <span class="text-gray-400 text-xs">No Image</span>
+                        </div>
+                    <?php endif; ?>
+                </td>
                 <td class="px-4 py-2"><?= htmlspecialchars($item['product_name']) ?></td>
                 <td class="px-4 py-2 text-center"><?= htmlspecialchars($item['color_name']) ?></td>
                 <td class="px-4 py-2 text-center"><?= htmlspecialchars($item['size_name']) ?></td>
